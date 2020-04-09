@@ -1,0 +1,21 @@
+{
+  "name": "lightningdeviceapi",
+  "version": "0.1.1",
+  "description": "API for connecting data acquisition hardware to Lightning",
+  "main": "index.js",
+  "directories": {
+    "example": "examples"
+  },
+  "scripts": {
+    "watch": "node scripts/devsync",
+    "lint": "eslint ./development"
+  },
+  "author": "dn.lightning@adinstruments.com",
+  "license": "ISC",
+  "devDependencies": {
+    "cpx": "^1.5.0",
+    "eslint": "^6.5.1",
+    "typescript": "^3.7.3",
+    "@types/node": "^12.12.17"
+  }
+}
