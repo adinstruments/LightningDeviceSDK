@@ -66,7 +66,7 @@ In order for your plugin to be loaded by Lighting it must be placed into the fol
 `C:\Users\[USERNAME]\Documents\LabChart Lightning\Plugins\devices`
 
 (macOS)  
-`~/Library/Documents/LabChart Lightning/Plugins/devices`
+`~/Documents/LabChart Lightning/Plugins/devices`
 
 It is often useful during development to iterate rapidly and see the resulting changes as early as possible. For this, you can open a terminal and run:
 
