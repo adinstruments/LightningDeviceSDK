@@ -15,6 +15,7 @@ See [Changelog](CHANGELOG.md).
 
 ## Upcoming features
 
+-  Custom baud rates(The baud rate is currently set to 115200 for all devices)
 -  Multiple device syncronization
 -  Better error messaging
 
