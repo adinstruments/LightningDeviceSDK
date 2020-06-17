@@ -16,10 +16,6 @@
 
 /* eslint-disable no-fallthrough */
 
-interface Constructor<T> {
-   new (...args: any[]): T;
-}
-
 import {
    DuplexDeviceConnection,
    StreamRingBuffer,
