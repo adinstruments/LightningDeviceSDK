@@ -45,7 +45,7 @@ npm install
 
 Note: `npm` is the Node Package Manager which comes with Node.js and should already be installed with the steps above.
 
-In order for your plugin to be loaded by Lighting it must be placed into the following location:
+In order for your plugin to be loaded by Lightning it must be placed into the following location (it is up to you to create these folders or simply run `npm run watch` explained below):
 
 (Windows)  
 `C:\Users\[USERNAME]\Documents\LabChart Lightning\Plugins\devices`
