@@ -19,6 +19,9 @@ export class StreamRingBufferImpl implements StreamRingBuffer {
       this.inIndex = 0;
       this.outIndex = 0;
 
+      //let buffer = Buffer.alloc(sizeInSamples*2);
+      //let buffer = new ArrayBuffer(412);
+
       //buffer.
       const sizePow2 = this.calcPow2n(minSizeInSamples);
       this.lenMask = sizePow2 - 1;

@@ -1,3 +1,7 @@
+import { Writable } from 'stream';
+
+export * from './device-ui-api';
+
 //see quark-sys\libs\QuarkCOMInterfaces\IOpenDeviceConnection.h for
 //Quark c++ definition.
 //Some connections may have empty strings for some of these properties
@@ -80,7 +84,7 @@ export type HierarchyOfDeviceSettingsBase = HierarchyOfDeviceSettings | any;
 
 export interface IDeviceProxySettingsSys extends HierarchyOfDeviceSettingsBase {
    version: number;
-   dataInStreams: IDeviceStreamSettingsSys[];
+   dataInStreams: IDeviceStreamApi[];
 }
 
 export type HierarchyOfDeviceSettings = { [key: string]: DeviceSettingsValue };
@@ -171,6 +175,18 @@ export enum DeviceSettingControlType { // : int32
 }
 
 export interface OpenPhysicalDeviceDescriptor {
+   // MLHardwareDescriptor members:
+   //
+   // PowerLabType mType;
+   // PowerLabTechnology mTechnology;
+   // uint32 mInputs;
+   // ADIConnectionType mConType;
+   // PLHardwareDevice *mPowerLab;
+   // ADI::String mConnectionName;
+   // ADI::String mDeviceNameType;     //Last used hardware type name, e.g. 'PowerLab 2/20'.
+   // ADI::String mDeviceNameCustom;   //User assigned hardware name, e.g. EGCPowerLab
+   // ADI::String mPTreeStr;        //Future proofing file format - change to a wptree if new setting needs to be added
+
    deviceType: string;
    numInputs: number;
 
@@ -187,8 +203,7 @@ export interface OpenPhysicalDevice {
    release?(): void;
 }
 
-export interface IDeviceStreamSettingsSys
-   extends HierarchyOfDeviceSettingsBase {
+export interface IDeviceStreamApi extends HierarchyOfDeviceSettingsBase {
    inputSettings: IDeviceInputSettingsSys;
    enabled: IDeviceSetting;
    samplesPerSec: IDeviceSetting;
@@ -338,7 +353,7 @@ export interface ProxyDeviceSys {
    //    samplesPerSec: number, format: BlockDataFormat, unitsInfo: UnitsInfo): void;
    setupDataInStream(
       streamInDevice: number /*inputIndex: number,*/,
-      settings: IDeviceStreamSettingsSys,
+      settings: IDeviceStreamApi,
       configuration: Partial<IDeviceStreamConfiguration>,
       callback?: (error: Error | null, type: SysStreamEventType) => void,
       restartAnySampling?: boolean
@@ -444,6 +459,68 @@ export interface IDuplexStream extends IWritable {
 
 export enum SysStreamEventType {
    kApplyStreamSettingsToHardware = 0 | 0
+}
+
+export interface IDeviceManagerApi {
+   dispose(): void;
+
+   isSampling: boolean;
+   setSampling(sampling: boolean): Promise<boolean>;
+
+   /**
+    * Whether multi-rate sampling is enabled.
+    */
+   multiRate: boolean;
+
+   /**
+    * @returns the display name of a device being used in a recording.
+    *
+    * @param deviceIndex The index of the device.
+    */
+   deviceDisplayName(deviceIndex: number): string | undefined;
+
+   /**
+    * PowerLab only.
+    *
+    * Returns a string describing the current status of a POD or Front-end
+    * setting or control.
+    *
+    * @param statusType
+    */
+   getStreamStatus(
+      deviceIndexUnused: number,
+      streamIndex: number,
+      statusType: DeviceInputStatusTypes
+   ): string | undefined;
+
+   /**
+    * PowerLab only.
+    *
+    * Not all pods or front-ends support actions. May fail silently.
+    *
+    * Async because some actions (such as zeroing) may be long running.
+    *
+    * @param actionType The type of action to perform.
+    *
+    * @param actionValue Any associated value for the action, otherwise empty string.
+    *
+    * @param onDoneCallback Called when action completes (on main thread).
+    * If sampling was suspended, sampling will now have resumed again by the time
+    * this is called.
+    *
+    * @param onDidSetOptionCallback Called when action completes (on main thread).
+    * Optional. If sampling was suspended, this callback provides an opportunity
+    * for UI to retrieve the new status (post action being performed) before
+    * sampling resumes.
+    */
+   performStreamAction(
+      deviceIndex: number,
+      streamIndex: number,
+      actionType: DeviceInputActionTypes,
+      actionValue: string,
+      onDoneCallback: (error: Error | null, result: boolean) => void,
+      onDidSetOptionCallback?: (error: Error | null, result: boolean) => void
+   ): void;
 }
 
 //The JS part of the ProxyDevice called from Quark
