@@ -27,7 +27,9 @@ import {
    DeviceValueType,
    IDeviceInputSettingsSys,
    IDeviceStreamSettingsSys,
+   UnitsInfo,
    UnitPrefix,
+   IDuplexStream,
    IDeviceClass,
    DeviceEvent,
    OpenPhysicalDevice,
@@ -35,13 +37,12 @@ import {
    SysStreamEventType,
    TDeviceConnectionType,
    BlockDataFormat,
-   IDuplexStream,
-   UnitsInfo
+   OpenPhysicalDeviceDescriptor
 } from '../../public/device-api';
 
 import { Setting } from '../../public/device-settings';
 
-import { UnitsInfo16Bit } from '../../public/device-units';
+import { UnitsInfoImpl, UnitsInfo16Bit } from '../../public/device-units';
 
 import { DuplexStream } from '../../public/device-streams';
 
@@ -157,12 +158,22 @@ class PhysicalDevice implements OpenPhysicalDevice {
          this.typeName += ' with daisy';
       }
    }
+
+   getDescriptor(): OpenPhysicalDeviceDescriptor {
+      return {
+         deviceType: this.getDeviceName(),
+         numInputs: this.getNumberOfAnalogInputs(),
+         deviceId:
+            this.deviceConnection.serialNumber ||
+            this.deviceConnection.devicePath
+      };
+   }
 }
 
 class InputSettings {
    //TODO: remove unitsInfo (see test-device.ts)
-   unitsInfo: UnitsInfo16Bit; // UnitsInfo16Bit;
-   range: Setting;
+   unitsInfo: any; // UnitsInfo16Bit;
+   range: any;
 
    setValues(other: IDeviceInputSettingsSys) {
       this.range.setValue(other.range);
@@ -192,8 +203,8 @@ class InputSettings {
 }
 
 class StreamSettings implements IDeviceStreamSettingsSys {
-   enabled: Setting;
-   samplesPerSec: Setting;
+   enabled: any;
+   samplesPerSec: any;
    streamName: string;
    inputSettings: InputSettings;
 
@@ -257,7 +268,7 @@ class CytonParser {
       ++gSampleCountForTesting;
    }
 
-   constructor(public inStream: IDuplexStream) {
+   constructor(public inStream: any) {
       this.state = CytonState.kUnknown;
       this.lastError = '';
       this.proxyDevice = null;
@@ -379,7 +390,7 @@ class CytonParser {
             this.state = CytonState.kLookingForPacket;
             this.expectedSampleCount = 0;
             if (this.proxyDevice) this.proxyDevice.onSamplingStarted();
-            break;
+
          case CytonState.kLookingForPacket:
          case CytonState.kSampling:
             while (this.bytesInPacket) {
@@ -461,7 +472,6 @@ class CytonParser {
             break;
          case CytonState.kError:
             console.warn('Cyton parser: error state');
-            break;
          default:
             console.warn('Cyton parser: unexpected state:', this.state);
       } // switch
@@ -485,8 +495,8 @@ class CytonParser {
 } // CytonParser
 
 class DeviceStreamConfigurationImpl implements IDeviceStreamConfiguration {
-   unitsInfo: UnitsInfo;
-   dataFormat: BlockDataFormat;
+   unitsInfo: any;
+   dataFormat: any;
 
    constructor() {
       this.unitsInfo = getDefaultUnits();
@@ -979,12 +989,22 @@ class ProxyDevice implements IProxyDevice {
  * objects of its class, as well as the ProxyDevice objects.
  */
 class DeviceClass implements IDeviceClass {
+   // While worker support for devices is in development.
+   runOnMainThread = true;
+
    constructor() {
       this.checkDeviceIsPresent = this.checkDeviceIsPresent.bind(this);
    }
 
    onError(err: Error): void {
       console.error(err);
+   }
+
+   /**
+    * Optional method for testing only!
+    */
+   clearPhysicalDevices(): void {
+      //this.physicalDevices = [];
    }
 
    /**
@@ -1011,12 +1031,12 @@ class DeviceClass implements IDeviceClass {
     * @returns a TDeviceConnectionType that defines the connection type.
     * ie. USB, serial etc.
     */
-   getDeviceConnectionType(): TDeviceConnectionType {
+   getDeviceConnectionType(): any {
       return TDeviceConnectionType.kDevConTypeSerialPort;
    }
 
    // This is the method that will be called when integration tests are running.
-   getDeviceConnectionTypeTEST(): TDeviceConnectionType {
+   getDeviceConnectionTypeTEST(): any {
       return TDeviceConnectionType.kDevConTypeMockSerialPortForTesting;
    }
 
@@ -1070,6 +1090,8 @@ class DeviceClass implements IDeviceClass {
       const kTimeoutms = 3000; // Time for device to reboot and respond
       const devStream = new DuplexStream(deviceConnection);
 
+      deviceConnection.setOption({ baud_rate: 115200 });
+
       //node streams default to 'utf8' encoding, which most devices won't understand.
       //With 'utf8' encoding, non-ascii chars, such as:
       //devStream.write('\xD4\x02\x02\xD4\x76\x0A\x62');
@@ -1083,6 +1105,7 @@ class DeviceClass implements IDeviceClass {
          callback(err, null); // errors include timeouts
       });
 
+      const deviceClass = this;
       let resultStr = '';
       // connect data handler
       devStream.on('data', (newBytes: Buffer) => {
@@ -1098,7 +1121,7 @@ class DeviceClass implements IDeviceClass {
 
                const versionInfo = resultStr.slice(startPos, endPos);
                const physicalDevice = new PhysicalDevice(
-                  this,
+                  deviceClass,
                   deviceConnection,
                   versionInfo
                );
@@ -1126,10 +1149,22 @@ class DeviceClass implements IDeviceClass {
    ): IProxyDevice {
       return new ProxyDevice(quarkProxy, physicalDevice as PhysicalDevice);
    }
+
+   indexOfBestMatchingDevice(
+      descriptor: OpenPhysicalDeviceDescriptor,
+      availablePhysDevices: OpenPhysicalDeviceDescriptor[]
+   ): number {
+      console.log(
+         'OpenBCI.indexOfBestMatchingDevice called',
+         descriptor,
+         availablePhysDevices
+      );
+      return 0;
+   }
 }
 
 module.exports = {
-   getDeviceClass() {
-      return new DeviceClass();
+   getDeviceClasses() {
+      return [new DeviceClass()];
    }
 };

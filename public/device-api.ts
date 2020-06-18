@@ -11,6 +11,33 @@ export interface DeviceConnectionInfo {
    serialNumber: string;
 }
 
+export enum TFlowControl {
+   none = 0 | 0,
+   software = 1 | 0,
+   hardware = 2 | 0
+}
+
+export enum TParity {
+   none = 0 | 0,
+   odd = 1 | 0,
+   even = 2 | 0
+}
+
+export enum TStopBits {
+   one = 0 | 0,
+   onepointfive = 1 | 0,
+   two = 2 | 0
+}
+
+//See boost ASIO: /boost/asio/serial_port_base.hpp
+export interface SerialPortOptions {
+   baud_rate?: number;
+   flow_control?: TFlowControl; //default: none
+   parity?: TParity; //default: none
+   stop_bits?: TStopBits; //default: one
+   character_size?: number; //default: 8
+}
+
 export interface DeviceConnection extends DeviceConnectionInfo {
    start(): boolean; //returns true if started or already running
    stop(): void;
@@ -19,6 +46,7 @@ export interface DeviceConnection extends DeviceConnectionInfo {
    ): void;
    onStreamDestroy(): void; //reset the callback
    release(): void;
+   setOption(options: SerialPortOptions): void;
 }
 
 export interface DuplexDeviceConnection extends DeviceConnection {
@@ -142,11 +170,20 @@ export enum DeviceSettingControlType { // : int32
    kControlTypeGainMenu = 31 | 0
 }
 
+export interface OpenPhysicalDeviceDescriptor {
+   deviceType: string;
+   numInputs: number;
+
+   // A unique identifier for this piece of hardware.
+   deviceId: string;
+}
+
 export interface OpenPhysicalDevice {
    deviceConnection: DuplexDeviceConnection;
    getDeviceName(): string;
    getNumberOfAnalogInputs(): number;
    getNumberOfAnalogStreams(): number;
+   getDescriptor(): OpenPhysicalDeviceDescriptor;
    release?(): void;
 }
 
@@ -156,8 +193,10 @@ export interface IDeviceStreamSettingsSys
    enabled: IDeviceSetting;
    samplesPerSec: IDeviceSetting;
 
-   inputIndex?: number;
    streamName?: string;
+   // The following are currently supplied by PowerLabs.
+   userEnabled?: boolean;
+   streamInDevice?: number;
 }
 
 export interface IDeviceInputSettingsSys {
@@ -227,7 +266,8 @@ const kDeviceConnectionTypeBase = 0x80230000 | 0;
 //Defined in quark-sys\libs\QuarkCOMInterfaces\IOpenDeviceConnection.h
 export enum TDeviceConnectionType {
    kDevConTypeSerialPort = kDeviceConnectionTypeBase,
-   kDevConTypeMockSerialPortForTesting = kDeviceConnectionTypeBase + 1
+   kDevConTypeMockSerialPortForTesting = kDeviceConnectionTypeBase + 1,
+   kDevConTypeMockSerialPortsForTesting = kDeviceConnectionTypeBase + 2
 }
 
 //Defined in quark-sys\src\callback-and-wait.h
@@ -263,15 +303,25 @@ export interface IDeviceClass {
       physicalDevice: OpenPhysicalDevice | null
    ): IProxyDevice;
 
-   /**
-    * Optional. Implement for device unit testability. See devices-testing.ts
-    */
-   makePhysicalDevice?(
-      deviceConnection: DeviceConnection,
-      versionInfo: string
-   ): OpenPhysicalDevice;
-
    release?(): void;
+
+   /**
+    * Optional. Called when ADI device tests are run to ensure large numbers of physical
+    * devices do not accumulate across tests.
+    */
+   clearPhysicalDevices?(): void;
+
+   /**
+    * Called when deciding which physical device should be used for the specified
+    * device proxy in a recording.
+    *
+    * @returns The index into the passed-in physical devices array of the best match, or -1
+    * if no device is a good match. In this case, no device will be assigned to the proxy.
+    */
+   indexOfBestMatchingDevice(
+      descriptor: OpenPhysicalDeviceDescriptor,
+      availablePhysicalDevices: OpenPhysicalDeviceDescriptor[]
+   ): number;
 }
 
 //The Quark part of the ProxyDevice
@@ -430,4 +480,22 @@ export interface IProxyDevice {
 
    //Release buffers
    cleanupAfterSampling(): boolean;
+}
+
+export enum TestDeviceFakeConnectionIndices {
+   kTestDevice0 = 0 | 0,
+   kTestDevice1 = 1 | 0,
+   kTestDevice2 = 2 | 0,
+   kNIBP0 = 3 | 0,
+   kKent0 = 4 | 0
+}
+
+export function allFakeTestDeviceNames(): string[] {
+   return [
+      'Test OpenBCI-8s',
+      'Test OpenBCI-2s',
+      'Test OpenBCI-6s',
+      'Test NIBP',
+      'Test Kent'
+   ];
 }

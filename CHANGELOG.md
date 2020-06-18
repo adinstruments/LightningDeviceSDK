@@ -1,5 +1,13 @@
 # LightningDeviceSDK Change Log
 
+### v0.1.4 - 3/09/2020
+- Added support for serial port options(SerialPortOptions)
+   - Baud rate 
+   - Flow control
+   - Parity
+   - Stop bits
+   - Character size
+   - Updated example files to include support for multiple devices in Lightning
 
 ### v0.1.3 - 9/04/2020
  - Chanced name to LightningDeviceSDK
