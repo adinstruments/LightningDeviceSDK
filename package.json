@@ -1,6 +1,6 @@
 {
   "name": "lightningdeviceapi",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "API for connecting data acquisition hardware to Lightning",
   "main": "index.js",
   "directories": {

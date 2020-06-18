@@ -1,5 +1,8 @@
 # LightningDeviceSDK Change Log
 
+### v0.1.5 - 6/18/2020
+- Added support for custom device UI
+
 ### v0.1.4 - 3/09/2020
 - Added support for serial port options(SerialPortOptions)
    - Baud rate 

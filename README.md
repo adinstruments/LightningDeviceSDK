@@ -81,6 +81,10 @@ LabChart Lightning must be relaunched in order to pick up device plugin changes.
 
 To get started implementing a device plugin, see the [Overview](OVERVIEW.md).
 
+## Advanced Topics
+
+Customizing Lightning's [user interface](DEVICE-UI.md) for your device.
+
 ## License
 
 BSD 3-Clause Clear
