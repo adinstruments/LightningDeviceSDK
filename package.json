@@ -7,8 +7,7 @@
     "example": "examples"
   },
   "scripts": {
-    "watch": "node scripts/devsync",
-    "lint": "eslint ./development"
+    "watch": "node scripts/devsync"
   },
   "author": "dn.lightning@adinstruments.com",
   "license": "ISC",

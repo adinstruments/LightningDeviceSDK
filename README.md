@@ -45,20 +45,6 @@ npm install
 
 Note: `npm` is the Node Package Manager which comes with Node.js and should already be installed with the steps above.
 
-It is recommended to use ESLint to validate your Javascript as you're writing your device plugin:
-
-Run eslint on all source files under `development/`:
-
-```
-npm run lint
-```
-
-Or for an individual file:
-
-```
-npx run eslint yourFile.js
-```
-
 In order for your plugin to be loaded by Lighting it must be placed into the following location:
 
 (Windows)  
