@@ -1,17 +1,8 @@
 /**
- * Example device driver for the OpenBCI Cyton device.
- *
- * Notes:
- * - Quark is Lightning's C++ sampling engine.
- * - In order for this file to be registered by Lightning, it must be located
- *   under ~/Documents/LabChart Lightning/Plugins/devices
- * - Technical term: "Device class" is the set of types of device that can share the same settings.
- *
- * This file contains definitions for three necessary objects:
- * - ProxyDevice: an object that is created for each recording. Manages hardware settings and sampling.
- * - PhysicalDevice: an object that is a representation of the connected hardware device.
- * - DeviceClass: an object that represents the device class and can find and create PhysicalDevice
- *   objects of its class, as well as the ProxyDevice objects.
+ * Example device plugin based on the OpenBCI Cyton protocol:
+ *  - Builds on @link SerialSettings, adding support for users to choose an
+ *    input for each data stream from a possibly large set of device inputs.
+ *  - Samples in Lightning producing fake generated data
  */
 
 /* eslint-disable no-fallthrough */
@@ -136,12 +127,18 @@ export function gainCharFromPosFullScale(posFullScale: number) {
    return '0';
 }
 
-const kStreamNames = [
+const kInputNames = [
    'Serial Input 1',
    'Serial Input 2',
    'Serial Input 3',
-   'Serial Input 4'
+   'Serial Input 4',
+   'Serial Input 5',
+   'Serial Input 6',
+   'Serial Input 7',
+   'Serial Input 8'
 ];
+
+const kNumStreams = 4;
 
 const kEnableLogging = false;
 
@@ -166,8 +163,8 @@ export class PhysicalDevice implements OpenPhysicalDevice {
       deviceConnection: DuplexDeviceConnection
    ) {
       this.deviceConnection = deviceConnection;
-      this.numberOfChannels = kStreamNames.length;
-      this.serialNumber = `ADI-SerialSettings-123`;
+      this.numberOfChannels = kInputNames.length;
+      this.serialNumber = `ADI-SerialWithMappedInputs-123`;
 
       const inStream = new DuplexStream(this.deviceConnection);
       this.parser = new Parser(inStream);
@@ -203,7 +200,7 @@ export class PhysicalDevice implements OpenPhysicalDevice {
     * @returns number of analog output streams on this device
     */
    getNumberOfAnalogStreams() {
-      return this.numberOfChannels;
+      return kNumStreams;
    }
 
    getDescriptor(): OpenPhysicalDeviceDescriptor {
@@ -218,14 +215,15 @@ export class PhysicalDevice implements OpenPhysicalDevice {
 class InputSettings {
    range: Setting;
 
+   connectedStreams: number[] = [];
+
    setValues(other: IDeviceInputSettingsSys) {
       this.range.setValue(other.range);
    }
 
    constructor(
+      private inputIndex: number,
       proxy: ProxyDevice,
-      index: number,
-      streamSettings: StreamSettings,
       settingsData: IDeviceInputSettingsSys
    ) {
       //Gain range setting
@@ -235,8 +233,14 @@ class InputSettings {
             setting: IDeviceSetting,
             newValue: DeviceValueType
          ): DeviceValueType => {
-            proxy.updateStreamSettings(index, streamSettings, {
-               unitsInfo: unitsFromPosFullScale(setting.value as number)
+            this.connectedStreams.forEach(streamIndex => {
+               proxy.updateStreamSettings(
+                  streamIndex,
+                  proxy.settings.dataInStreams[streamIndex] as StreamSettings,
+                  {
+                     unitsInfo: unitsFromPosFullScale(setting.value as number)
+                  }
+               );
             });
 
             return newValue;
@@ -245,28 +249,52 @@ class InputSettings {
 
       //Next input setting
    }
+
+   connectStream(stream: number) {
+      if (!this.connectedStreams.includes(stream))
+         this.connectedStreams.push(stream);
+   }
+
+   disconnectStream(stream: number) {
+      this.connectedStreams = this.connectedStreams.filter(
+         cur => cur !== stream
+      );
+   }
 }
 
 class StreamSettings implements IDeviceStreamApi {
    enabled: Setting;
    samplesPerSec: Setting;
+   inputId: Setting;
    streamName: string;
+
+   // Derived state. getters, setters are not supported by Lightning.
+   inputIndex: number;
+
+   //If multiple streams share the hardware input they should reference the same InputSettings object
    inputSettings: InputSettings;
 
-   setValues(other: IDeviceStreamApi) {
+   updateDerivedState(/*allPhysicalInputs: InputSettings[]*/) {
+      this.inputIndex = this.inputId.value as number;
+      this.streamName = kInputNames[this.inputIndex];
+      // this.inputSettings = allPhysicalInputs[this.inputIndex];
+   }
+
+   setValues(other: IDeviceStreamApi, allPhysicalInputs: InputSettings[]) {
       this.enabled.setValue(other.enabled);
       this.samplesPerSec.setValue(other.samplesPerSec);
+      other.inputId && this.inputId.setValue(other.inputId);
       this.inputSettings.setValues(other.inputSettings);
+      this.updateDerivedState();
+      allPhysicalInputs[this.inputIndex].setValues(this.inputSettings);
    }
 
    constructor(
       proxy: ProxyDevice,
       streamIndex: number,
-      inputIndex: number,
-      settingsData: IDeviceStreamApi
+      settingsData: IDeviceStreamApi,
+      allPhysicalInputs: InputSettings[]
    ) {
-      this.streamName = kStreamNames[inputIndex];
-
       //enabled by default for now!
       this.enabled = new Setting(
          settingsData.enabled,
@@ -283,6 +311,31 @@ class StreamSettings implements IDeviceStreamApi {
             return newValue;
          }
       );
+
+      this.inputId = new Setting(
+         settingsData.inputId!,
+         (setting: IDeviceSetting, newValue: DeviceValueType) => {
+            // Disconnect us (the stream) from our previous input.
+            proxy.inputs[this.inputIndex].disconnectStream(streamIndex);
+
+            this.updateDerivedState();
+
+            this.inputSettings = proxy.inputs[this.inputIndex];
+
+            // this.inputSettings.setValues(settingsData.inputSettings);
+
+            // And connect us up to the new input.
+            proxy.inputs[this.inputIndex].connectStream(streamIndex);
+
+            proxy.updateStreamSettings(streamIndex, this, {});
+            return newValue;
+         }
+      );
+
+      this.updateDerivedState();
+
+      this.inputSettings = allPhysicalInputs[this.inputIndex];
+      // this.inputSettings.setValues(settingsData.inputSettings);
    }
 }
 
@@ -444,27 +497,37 @@ class Parser {
          this.expectedSampleCount = data[1]; //resynch
       }
 
+      const { dataInStreams } = this.proxyDevice.settings;
       let byteIndex = kStartOfDataIndex;
       for (
-         let streamIndex = 0;
-         streamIndex < nStreams;
-         ++streamIndex, byteIndex += 3
+         let inputIndex = 0;
+         inputIndex < kInputNames.length;
+         ++inputIndex, byteIndex += 3
       ) {
-         // Don't produce data for disabled streams.
-         if (
-            !this.proxyDevice.settings.dataInStreams[streamIndex].enabled.value
-         )
-            continue;
+         // Get all streams (usually just one) that map to this input.
+         const streams = dataInStreams
+            .map((stream, streamIndex) => ({ stream, streamIndex }))
+            .filter(
+               ({ stream }) =>
+                  (stream as StreamSettings).inputId.value === inputIndex
+            );
 
-         // The OpenBCI Cyton format is big endian 24 bit.
-         // See http://docs.openbci.com/Hardware/03-Cyton_Data_Format
-         const value =
-            (data[byteIndex] << 16) +
-            (data[byteIndex + 1] << 8) +
-            data[byteIndex + 2];
+         for (const entry of streams) {
+            const { stream, streamIndex } = entry;
 
-         const int16Val = value >> 8; // For now just taking the high 16 bits
-         outStreamBuffers[streamIndex].writeInt(int16Val);
+            // Don't produce data for disabled streams.
+            if (!stream.enabled.value) continue;
+
+            // The OpenBCI Cyton format is big endian 24 bit.
+            // See http://docs.openbci.com/Hardware/03-Cyton_Data_Format
+            const value =
+               (data[byteIndex] << 16) +
+               (data[byteIndex + 1] << 8) +
+               data[byteIndex + 2];
+
+            const int16Val = value >> 8; // For now just taking the high 16 bits
+            outStreamBuffers[streamIndex].writeInt(int16Val);
+         }
       }
       this.incrementExpectedSampleCount();
       return true;
@@ -667,13 +730,25 @@ const kDefaultRate: IDeviceSetting = {
 };
 
 function getDefaultSettings() {
-   const kDefaultSettings = {
-      version: kSettingsVersion,
-      dataInStreams: kStreamNames.map(() => ({
+   const deviceStreams = new Array(kNumStreams)
+      .fill(0)
+      .map((inputName, index) => ({
          enabled: kDefaultEnabled,
          inputSettings: kDefaultInputSettings,
-         samplesPerSec: kDefaultRate
-      }))
+         samplesPerSec: kDefaultRate,
+         inputId: {
+            settingName: 'Source',
+            value: index,
+            options: kInputNames.map((value, index) => ({
+               value: index,
+               display: value
+            }))
+         }
+      }));
+
+   const kDefaultSettings = {
+      version: kSettingsVersion,
+      dataInStreams: deviceStreams
    };
 
    return kDefaultSettings;
@@ -683,7 +758,12 @@ function getDefaultDisabledStreamSettings() {
    const result = {
       enabled: kDefaultDisabled,
       inputSettings: kDefaultInputSettings,
-      samplesPerSec: kDefaultRate
+      samplesPerSec: kDefaultRate,
+      inputId: {
+         settingName: 'Source',
+         value: 0,
+         options: []
+      }
    };
    return result;
 }
@@ -696,6 +776,13 @@ class ProxyDevice implements IProxyDevice {
     * Any state within "settings" will be saved / loaded by the application.
     */
    settings: IDeviceProxySettingsSys;
+
+   /**
+    * To allow inputs to be shared between streams, we store a list of all physical
+    * input settings objects in the proxy. Any input settings are saved via in the
+    * settings for any stream that uses it.
+    */
+   inputs: InputSettings[] = [];
 
    lastError: Error | null;
 
@@ -733,6 +820,10 @@ class ProxyDevice implements IProxyDevice {
       this.parser = null;
       this.lastError = null;
 
+      this.inputs = kInputNames.map(
+         (_, index) => new InputSettings(index, this, kDefaultInputSettings)
+      );
+
       /**
        * Initialize the settings for the device to defaults or cloned settings passed in.
        * This does two things:
@@ -761,7 +852,7 @@ class ProxyDevice implements IProxyDevice {
     * Called for both new and existing recordings. Initialize all settings for this device that are
     * to be saved in the recording.
     *
-    * @param nStreams The number of default streams to initialize for.
+    * @param settingsData
     */
    initializeSettings(settingsData: IDeviceProxySettingsSys) {
       const defaultSettings = getDefaultSettings();
@@ -804,28 +895,36 @@ class ProxyDevice implements IProxyDevice {
          }
 
          //If multiple streams share the hardware input they should reference the same InputSettings object
-         const inputIndex = streamIndex; //Default to 1 to 1
          const streamSettings = new StreamSettings(
             this,
             streamIndex,
-            inputIndex,
-            defaultStreamSettingsData //use default settings to get correct options
+            defaultStreamSettingsData, //use default settings to get correct options
+            this.inputs
          );
-
-         streamSettings.inputSettings = new InputSettings(
-            this,
-            inputIndex,
-            streamSettings,
-            defaultStreamSettingsData.inputSettings
-         );
-
-         //Assign values not (old) options!
-         streamSettings.setValues(streamSettingsData);
 
          this.settings.dataInStreams.push(streamSettings);
+      }
+
+      for (let streamIndex = 0; streamIndex < nStreams; streamIndex++) {
+         const streamSettingsData = settingsData.dataInStreams[streamIndex];
+
+         const inputIndex = streamSettingsData.inputId
+            ? (streamSettingsData.inputId.value as number)
+            : streamIndex; //Default to 1 to 1
+
+         // Tell the input that this stream is interested in any changes to input
+         // settings. This is required because input settings are stored in each
+         // stream currently.
+         this.inputs[inputIndex].connectStream(streamIndex);
+
+         // Update stream and input settings with the passed in values.
+         const streamSettings = this.settings.dataInStreams[streamIndex];
+         streamSettings.setValues(streamSettingsData, this.inputs);
+
+         // Send settings down to hardware and Quark.
          this.updateStreamSettings(
             streamIndex,
-            streamSettings,
+            streamSettings as StreamSettings,
             new DeviceStreamConfiguration(
                streamSettings.inputSettings.range.value as number
             ),
@@ -952,6 +1051,16 @@ class ProxyDevice implements IProxyDevice {
     */
    setSettings(settings: IDeviceProxySettingsSys) {
       if (kEnableLogging) console.log('ProxyDevice.setSettings()');
+
+      // Each stream persists its own input settings. Update the settings in
+      // our inputs collection.
+      settings.dataInStreams.forEach((stream, index) => {
+         const inputIndex = stream.inputId
+            ? (stream.inputId.value as number)
+            : index;
+         this.inputs[inputIndex].setValues(stream.inputSettings);
+      });
+
       // Create the settings structure, copying our saved settings info into it.
       this.initializeSettings(settings);
 
@@ -1158,7 +1267,7 @@ export class DeviceClass implements IDeviceClass {
     * @returns the name of the class of devices
     */
    getDeviceClassName(): string {
-      return 'SerialSettings';
+      return 'SerialWithMappedInputs';
    }
 
    /**
@@ -1166,7 +1275,7 @@ export class DeviceClass implements IDeviceClass {
     */
    getClassId() {
       // UUID generated using https://www.uuidgenerator.net/version1
-      return 'e60ce0c8-b107-11ea-b3de-0242ac130004';
+      return 'c14ac086-b1e6-11ea-b3de-0242ac130004';
    }
 
    /**

@@ -91,11 +91,24 @@ LabChart Lightning will then ensure settings changes are persisted across runs o
 
 ![Adjusting sampling rate](images/adjust-rate.gif)
 
+## Examples
+
+**`examples/devices/SerialSettings.ts`**
+
+* A serial device whose parser is based on the OpenBCI protocol
+* Exposes two user configurable settings: sampling rate and gain for each produced data stream.
+* Signal sampling settings UI is described within `SerialSettingsUI.ts`
+
+**`examples/devices/SerialSettingsWithMappedInputs`**
+
+* A serial device whose parser is based on the OpenBCI protocol
+* Exposes two user configurable settings: sampling rate and gain for each produced data stream.
+* `SerialSettingsUI.ts` contains example showing how to add a list element to the signal sampling settins UI for choosing which device input will be recorded from.
+
 ## More info
 
 Interface definitions can be found inside the `public` folder.
 
 These interfaces contain type annotations (in Typescript) and are usable in Typescript files. The import path must be relatively the same is in the examples as it is copied directly in-order to compile. E.g. Imports must always be from the path `../../public/device-api`
-
 
 The baud rate is currently set to 115200 for all devices.

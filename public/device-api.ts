@@ -208,7 +208,13 @@ export interface IDeviceStreamApi extends HierarchyOfDeviceSettingsBase {
    enabled: IDeviceSetting;
    samplesPerSec: IDeviceSetting;
 
+   /**
+    * Optional setting for the index of physical input produced by the device to
+    * be recorded into this stream.
+    */
+   inputId?: IDeviceSetting;
    streamName?: string;
+
    // The following are currently supplied by PowerLabs.
    userEnabled?: boolean;
    streamInDevice?: number;
@@ -478,6 +484,13 @@ export interface IDeviceManagerApi {
     * @param deviceIndex The index of the device.
     */
    deviceDisplayName(deviceIndex: number): string | undefined;
+
+   /**
+    * @returns the internal/model name of a device being used in a recording.
+    *
+    * @param deviceIndex The index of the device.
+    */
+   deviceInternalName(deviceIndex: number): string | undefined;
 
    /**
     * PowerLab only.

@@ -7,37 +7,33 @@ import {
 } from '../../public/device-api';
 import { PluginFeatureTypes } from '../../public/plugin-api';
 
-export class DeviceUI implements IDeviceUIApi {
-   name = 'SerialSettings UI';
+class SerialWithMappedInputsUI implements IDeviceUIApi {
    type: PluginFeatureTypes = 'Device UI';
-   matchesDevice(deviceDisplayName: string) {
-      return deviceDisplayName === 'SerialSettings';
+   name = 'SerialWithMappedInputsUI';
+
+   matchesDevice(
+      deviceDisplayName: string,
+      deviceInternalName: string
+   ): boolean {
+      return deviceDisplayName.startsWith('SerialWithMappedInputs');
    }
 
-   /**
-    * Defines the user interface elements that will be used to adjust basic rate / range settings
-    * for this device.
-    *
-    * @param streamSettings settings for the current stream within the recording.
-    * @param deviceIndex 0-based index of the stream's device within the recording.
-    * @param deviceManager Reference to the current device manager.
-    */
    describeStreamSettingsUI(
       settings: IDeviceStreamApi,
       deviceIndex: number,
       deviceManager: IDeviceManagerApi
    ): IUIAreaApi {
-      const elements: IUIElementApi[] = [];
+      const out: IUIElementApi[] = [];
 
-      elements.push({
+      out.push({
          type: 'header',
-         title: 'SerialSettings Device',
+         title: 'Sampling settings',
          subtitle: `${deviceManager.deviceDisplayName(
             deviceIndex
          )}, ${settings.streamName || 'Input'}`
       });
 
-      elements.push({
+      out.push({
          type: 'setting',
          setting: settings.samplesPerSec,
          controlType: 'rate-list',
@@ -47,27 +43,39 @@ export class DeviceUI implements IDeviceUIApi {
             : 'Setting a different rate for just this signal requires enabling Multi Rate in Recording Sampling Settings'
       });
 
-      elements.push({
+      out.push({
          type: 'setting',
          controlType: 'list',
          setting: settings.inputSettings.range
       });
 
-      elements.push({
+      if (settings.inputId) {
+         out.push({
+            type: 'setting',
+            setting: settings.inputId,
+            controlType: 'searchable-list',
+            info: 'Choose input to stream from the device'
+         });
+      }
+
+      const desiredWidthPixels = 650;
+      const desiredHeightPixels = 400;
+
+      out.push({
          type: 'signal-preview'
       });
 
       return {
-         elements,
+         elements: out,
          layout: 'default',
-         desiredWidthPixels: 650,
-         desiredHeightPixels: 400
+         desiredWidthPixels,
+         desiredHeightPixels
       };
    }
 }
 
 module.exports = {
    getDeviceUIClasses() {
-      return [new DeviceUI()];
+      return [new SerialWithMappedInputsUI()];
    }
 };

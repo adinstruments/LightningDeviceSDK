@@ -414,12 +414,22 @@ export interface IUIAreaApi {
  */
 export interface IJsDeviceUI {
    /**
-    * Class name of the device for which to customize the User Interface for.
+    * Called when LabChart Ligtning is evaluating which IJsDeviceUI
+    * implementation it will use to display information for a specific
+    * device.
     *
-    * This must exactly match the string returned by the device class's
-    * getDeviceClassName() member.
+    * @param deviceDisplayName is the device name displayed in the
+    * Lightning user interface.
+    * @param deviceInternalName is the internal name of the device. This
+    * should be used if the device display name is not specific enough
+    * or device supports being renamed.
+    *
+    * @returns true if this class will provide the UI for the device.
     */
-   deviceClassName: string | 'ALL';
+   matchesDevice: (
+      deviceDisplayName: string,
+      deviceInternalName: string
+   ) => boolean;
 
    /**
     * Defines the user interface elements that will be used to adjust basic rate / range settings
