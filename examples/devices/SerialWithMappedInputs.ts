@@ -1259,6 +1259,12 @@ export class DeviceClass implements IDeviceClass {
     */
    release(): void {}
 
+   /**
+    * Required member for devices that support being run against Lightning's
+    * test suite.
+    */
+   clearPhysicalDevices(): void {}
+
    onError(err: Error): void {
       console.error(err);
    }
@@ -1387,8 +1393,6 @@ export class DeviceClass implements IDeviceClass {
    }
 }
 
-module.exports = {
-   getDeviceClasses() {
-      return [new DeviceClass()];
-   }
-};
+export function getDeviceClasses() {
+   return [new DeviceClass()];
+}
