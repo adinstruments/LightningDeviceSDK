@@ -1,5 +1,6 @@
 /**
- * Example device driver for the OpenBCI Cyton device.
+ * Example device plugin based on the OpenBCI Cyton protocol.
+ *  - Samples in Lightning using fake generated data
  *
  * Notes:
  * - Quark is Lightning's C++ sampling engine.

@@ -2,7 +2,13 @@
  * Example device plugin based on the OpenBCI Cyton protocol:
  *  - Builds on @link SerialSettings, adding support for users to choose an
  *    input for each data stream from a possibly large set of device inputs.
- *  - Samples in Lightning producing fake generated data
+ *  - Samples in Lightning using fake generated data
+ *
+ * Note: the approach for mapping inputs to streams in this example is only
+ * applicable to a small subset of devices that have internal multiplexing (
+ * e.g. there are more inputs available than can be streamed out of the device
+ * at any one time). Typically this approach is not required because it will
+ * be handled by LabChart Lightning.
  */
 
 /* eslint-disable no-fallthrough */

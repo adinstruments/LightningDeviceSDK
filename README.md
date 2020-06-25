@@ -1,6 +1,6 @@
 # LightningDeviceSDK
 
-The LightningDeviceSDK provides functionality to write device connection plugins in Javascript/Typescript for LabChart Lightning. This repo does not provide any functionality, only example files and typed interfaces. You will need LabChart Lightning with a valid license in order to run your device plugin.
+The LightningDeviceSDK provides functionality to write device connection plugins in Typescript for LabChart Lightning. This repo does not provide any functionality, only example files and typed interfaces. You will need LabChart Lightning with a valid license in order to run your device plugin.
 
 **\*\*The LightningDeviceSDK is currently under development and is subject to change.\*\***
 

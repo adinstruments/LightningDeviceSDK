@@ -91,7 +91,7 @@ LabChart Lightning will then ensure settings changes are persisted across runs o
 
 ![Adjusting sampling rate](images/adjust-rate.gif)
 
-## Examples
+## Examples included with the SDK
 
 **`examples/devices/SerialSettings.ts`**
 
@@ -103,7 +103,7 @@ LabChart Lightning will then ensure settings changes are persisted across runs o
 
 * A serial device whose parser is based on the OpenBCI protocol
 * Exposes two user configurable settings: sampling rate and gain for each produced data stream.
-* `SerialSettingsUI.ts` contains example showing how to add a list element to the signal sampling settins UI for choosing which device input will be recorded from.
+* `SerialWithMappedInputsUI.ts` shows how to add a list element to the signal sampling settins UI for choosing which device input will be recorded from.
 
 ## More info
 
