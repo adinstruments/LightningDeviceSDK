@@ -11,9 +11,11 @@ import {
    IDeviceSetting,
    DeviceInputActionTypes,
    DeviceInputStatusTypes,
-   IDeviceManagerApi
+   IDeviceManagerApi,
+   IDeviceSettingsApi
 } from './device-api';
 import { IPluginModuleFeature, ILcModel } from './plugin-api';
+import { HierarchyOfDeviceSettingsBase } from 'libs/quark';
 
 export type DeviceUIElementTypes =
    | 'setting' // Persisted in settings. The most common element.
@@ -57,6 +59,15 @@ export interface IDeviceUIElementBase {
     * to any sampling starting in the UI.
     */
    onWillEnterDeviceUI?(): void;
+
+   /**
+    * If true, disabled shows the element as non-interactive and prevents the user
+    * making changes to the control if applicable.
+    */
+   disabled?: boolean;
+
+   /** For child/dependent components we want to indent to create visual heirachy */
+   indentLevel?: IndentLevel;
 }
 
 export type DeviceUIControlTypes =
@@ -82,6 +93,8 @@ export interface IDeviceUISettingOptions {
    refreshUIOnChange?: boolean;
 }
 
+export type IndentLevel = 0 | 1 | 2 | 3;
+
 export interface IDeviceUISetting extends IDeviceUIElementBase {
    /**
     * Setting for this UI element. The setting will have been created earlier with the device
@@ -96,11 +109,6 @@ export interface IDeviceUISetting extends IDeviceUIElementBase {
     * options are present, etc).
     */
    controlType?: DeviceUIControlTypes;
-
-   /**
-    * If true, disabled prevents the user making changes to the control.
-    */
-   disabled?: boolean;
 
    /**
     * An optional info message associated with the setting. For example, if
@@ -121,15 +129,6 @@ export interface IDeviceUISetting extends IDeviceUIElementBase {
     * If controlType is 'radio', this is a list of possible radio options.
     */
    radioOptions?: IDeviceUISettingRadioOption[];
-
-   /**
-    * An array of settings that are affected by value changes to this setting.
-    * For example, Low-pass / high-pass filter have mutually exclusive
-    * combinations.
-    */
-   settingsToUpdate?: IDeviceSetting[];
-
-   settingsToReloadOptions?: IDeviceSetting[];
 
    settingOptions?: IDeviceUISettingOptions;
 }
@@ -235,21 +234,30 @@ export type DeviceActionProgressCallback = (
 
 export interface IDeviceUIAction extends IDeviceUIElementBase {
    action: (callback?: DeviceActionProgressCallback) => void;
-   label: string;
+
+   /**
+    * @property buttonText Text to be displayed within the action element.
+    */
+   buttonText: string;
+
+   /**
+    * @property label Optional text to show next to the action button.
+    */
+   label?: string;
 
    /**
     * @property disabled Optional function to determine (based on current
     * state of the settings or otherwise) whether the action control is to be
     * disabled in the UI.
     */
-   disabled?: (settings: IDeviceStreamApi) => boolean;
+   calcDisabled?: (settings: HierarchyOfDeviceSettingsBase) => boolean;
 
    /**
-    * @property actionInProgressLabel This is an optional label to display
+    * @property actionInProgressText This is an optional label to display
     * inside the button while the action is being performed. Useful for long
     * running actions.
     */
-   actionInProgressLabel?: string;
+   actionInProgressText?: string;
 }
 
 export interface IDeviceUIMultiStepActionStatus {
@@ -433,17 +441,31 @@ export interface IJsDeviceUI {
 
    /**
     * Defines the user interface elements that will be used to adjust basic rate / range settings
-    * for this device.
+    * for this device. Optional.
     *
     * @param streamSettings settings for the current stream within the recording.
     * @param deviceIndex 0-based index of the stream's device within the recording.
     * @param deviceManager Reference to the current device manager.
     */
-   describeStreamSettingsUI(
+   describeStreamSettingsUI?: (
       streamSettings: IDeviceStreamApi,
       deviceIndex: number,
       deviceManager: IDeviceManagerApi
-   ): IUIAreaApi;
+   ) => IUIAreaApi | undefined;
+
+   /**
+    * Defines the user interface elements that will be used to configure device-wide
+    * hardware options. Optional.
+    *
+    * @param deviceSettings settings for the device.
+    * @param deviceIndex 0-based index of the stream's device within the recording.
+    * @param deviceManager Reference to the current device manager.
+    */
+   describeDeviceSettingsUI?: (
+      deviceSettings: IDeviceSettingsApi,
+      deviceIndex: number,
+      deviceManager: IDeviceManagerApi
+   ) => IUIAreaApi | undefined;
 }
 
 /**
