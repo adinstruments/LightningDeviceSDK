@@ -4,20 +4,20 @@
 
 ## LabChart Lightning Device Plugins
 
-A Lightning device plugin is defined via a single Javascript (.js) file located in a specific folder that LabChart Lightning knows to load files from.
+A Lightning device plugin is defined via a single Typescript (.ts) file located in a specific folder that LabChart Lightning knows to load files from.
 
-Each LabChart Lightning device must export a single `getDeviceClass()` function, e.g.
+Each LabChart Lightning device must export a single `getDeviceClasses()` function, e.g.
 
-```
+```ts
 module.exports = {
-   getDeviceClass(libs) {
+   getDeviceClasses(libs) {
       ...
-      return new DeviceClass();
+      return [new DeviceClass()];
    }
 }
 ```
 
-When LabChart Lightning starts, it calls `getDeviceClass()`. This must return an object which Lightning can query to discover connected instances of your particular class of device.
+When LabChart Lightning starts, it calls `getDeviceClasses()`. This must return an object array which Lightning can query to discover connected instances of your particular class or classes of device.
 
 On launch, LabChart Lightning loads all plugins. If there is a problem loading the plugin, information about the error can be obtained by clicking the (...) button highlighted in red in the image below:
 
@@ -74,7 +74,7 @@ To better understand the role of the various objects in the plugin implementatio
 
 #### Scenario 1 - Attach a device and launch LabChart Lightning
 
-1. On launch, LabChart Lightning loads all plugins, calling `getDeviceClass()` which returns an instance of the plugin DeviceClass implementation. e.g. `return new DeviceClass();`
+1. On launch, LabChart Lightning loads all plugins, calling `getDeviceClasses()` which returns an instance of the plugin DeviceClass implementation. e.g. `[return new DeviceClass()];`
 2. Shortly after, Lightning initiates a device scan process. For each serial device returned by the operating system, `checkDeviceIsPresent(deviceConnection, callback)` is called on the DeviceClass implementation. If the vendor, product and manufacturer information for the connection match the expected values for the target device a new Physical device object is instantiated and returned to LabChart Lightning via callback.
 3. If a device was found, a new recording will be added to the project and a Device proxy for the found physical device will be created. The detected device will be shown in the bottom right corner of the application. Clicking on the device label, shows a summary popup as in the image below:
 
@@ -91,11 +91,24 @@ LabChart Lightning will then ensure settings changes are persisted across runs o
 
 ![Adjusting sampling rate](images/adjust-rate.gif)
 
+## Examples included with the SDK
+
+**`examples/devices/SerialSettings.ts`**
+
+* A serial device whose parser is based on the OpenBCI protocol
+* Exposes two user configurable settings: sampling rate and gain for each produced data stream.
+* Signal sampling settings UI is described within `SerialSettingsUI.ts`
+
+**`examples/devices/SerialSettingsWithMappedInputs`**
+
+* A serial device whose parser is based on the OpenBCI protocol
+* Exposes two user configurable settings: sampling rate and gain for each produced data stream.
+* `SerialWithMappedInputsUI.ts` shows how to add a list element to the signal sampling settins UI for choosing which device input will be recorded from.
+
 ## More info
 
-Interfaces can be found inside the `public` folder.
+Interface definitions can be found inside the `public` folder.
 
 These interfaces contain type annotations (in Typescript) and are usable in Typescript files. The import path must be relatively the same is in the examples as it is copied directly in-order to compile. E.g. Imports must always be from the path `../../public/device-api`
-
 
 The baud rate is currently set to 115200 for all devices.

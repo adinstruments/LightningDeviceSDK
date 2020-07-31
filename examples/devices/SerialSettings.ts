@@ -1,10 +1,11 @@
 /**
- * Example device driver for the OpenBCI Cyton device.
+ * Example device plugin based on the OpenBCI Cyton protocol.
+ *  - Samples in Lightning using fake generated data
  *
  * Notes:
  * - Quark is Lightning's C++ sampling engine.
  * - In order for this file to be registered by Lightning, it must be located
- *   under [LIGHTNING_INSTALL_DIR]/resources/app/plugins
+ *   under ~/Documents/LabChart Lightning/Plugins/devices
  * - Technical term: "Device class" is the set of types of device that can share the same settings.
  *
  * This file contains definitions for three necessary objects:
@@ -25,7 +26,7 @@ import {
    IDeviceSetting,
    DeviceValueType,
    IDeviceInputSettingsSys,
-   IDeviceStreamSettingsSys,
+   IDeviceStreamApi,
    UnitsInfo,
    UnitPrefix,
    IDuplexStream,
@@ -36,9 +37,7 @@ import {
    SysStreamEventType,
    TDeviceConnectionType,
    BlockDataFormat,
-   TestDeviceFakeConnectionIndices,
-   OpenPhysicalDeviceDescriptor,
-   allFakeTestDeviceNames
+   OpenPhysicalDeviceDescriptor
 } from '../../public/device-api';
 
 import { Setting } from '../../public/device-settings';
@@ -60,11 +59,6 @@ const kDataFormat = ~~BlockDataFormat.k16BitBlockDataFormat; // For now!
 const kSampleRates = [16000.0, 8000.0, 4000.0, 2000.0, 1000.0, 500.0, 250.0];
 const kDefaultSamplesPerSec = 250;
 
-const kGains = [1, 2, 4, 6, 8, 12, 24];
-
-const kChannelsPerADS1299 = 8;
-
-const kMinUpdatePeriodms = 50;
 const kMinOutBufferLenSamples = 1024;
 
 const kDefaultDecimalPlaces = 3;
@@ -76,7 +70,6 @@ const kDefaultDecimalPlaces = 3;
 // Currently we are only keeping the high 16 bits of the 24 bits (k16BitBlockDataFormat)
 
 const posFullScaleVAtGain1x = 4.5;
-const posFullScaleVAtGain2x = posFullScaleVAtGain1x / 2;
 
 const kUnitsForGain1x = new UnitsInfoImpl(
    'V', //unit name
@@ -145,16 +138,10 @@ export function gainCharFromPosFullScale(posFullScale: number) {
 }
 
 const kStreamNames = [
-   'Finger Pressure',
-   'HCU Pressure',
-   'Systolic',
-   'Mean Arterial',
-   'Diastolic',
-   'Interbeat Interval',
-   'Active Cuff',
-   'Cuff Countdown',
-   'AutoCal Quality',
-   'AutoCalc Countdown'
+   'Serial Input 1',
+   'Serial Input 2',
+   'Serial Input 3',
+   'Serial Input 4'
 ];
 
 const kEnableLogging = false;
@@ -168,40 +155,24 @@ export function resetgSampleCountForTesting() {
 /**
  * PhysicalDevice is a representation of the connected hardware device
  */
-export class TestPhysicalDevice implements OpenPhysicalDevice {
+export class PhysicalDevice implements OpenPhysicalDevice {
    deviceName: string;
-   typeName: string;
    serialNumber: string;
    deviceConnection: DuplexDeviceConnection;
-   parser: CytonParser;
+   parser: Parser;
    numberOfChannels: number;
-   testDeviceInfo: TestPhysicalDeviceInfo;
 
    constructor(
       private deviceClass: DeviceClass,
-      deviceConnection: DuplexDeviceConnection,
-      versionInfo: string,
-      testDeviceInfos: TestPhysicalDeviceInfo[],
-      physicalDeviceIndexInClass: number,
-      private isOpenBCI = false
+      deviceConnection: DuplexDeviceConnection
    ) {
       this.deviceConnection = deviceConnection;
-      this.typeName = '';
-      this.numberOfChannels = 0;
-      this.testDeviceInfo = testDeviceInfos[physicalDeviceIndexInClass];
+      this.numberOfChannels = kStreamNames.length;
+      this.serialNumber = `ADI-SerialSettings-123`;
 
-      this.processVersionInfo(versionInfo);
       const inStream = new DuplexStream(this.deviceConnection);
-      this.parser = new CytonParser(inStream);
-
-      if (physicalDeviceIndexInClass > 0 && testDeviceInfos.length > 0) {
-         this.deviceName =
-            testDeviceInfos[physicalDeviceIndexInClass].deviceName;
-      } else {
-         this.deviceName =
-            deviceClass.getDeviceClassName() +
-            (this.typeName ? ' ' + this.typeName : '');
-      }
+      this.parser = new Parser(inStream);
+      this.deviceName = deviceClass.getDeviceClassName() + ' Device';
    }
 
    release() {
@@ -243,31 +214,6 @@ export class TestPhysicalDevice implements OpenPhysicalDevice {
          deviceId: this.serialNumber || this.deviceConnection.devicePath
       };
    }
-
-   processVersionInfo(versionInfo: string) {
-      let adcs = 0;
-
-      const searchStr = 'ADS1299';
-      for (let adcPos = 0; true; ) {
-         adcPos = versionInfo.indexOf(searchStr, adcPos);
-         if (adcPos < 0) break;
-         ++adcs;
-         adcPos += searchStr.length;
-      }
-
-      this.numberOfChannels = this.testDeviceInfo.streamNames.length; // kChannelsPerADS1299 * adcs;
-
-      if (this.isOpenBCI) {
-         if (adcs >= 1) this.typeName = 'Cyton';
-         else if (adcs === 2) {
-            this.typeName += ' with daisy';
-         } else {
-            this.typeName = 'Unknown';
-         }
-      }
-
-      this.serialNumber = `ADI-${this.testDeviceInfo.deviceName}-000${this.testDeviceInfo.connectionIndex}`;
-   }
 }
 
 class InputSettings {
@@ -278,7 +224,7 @@ class InputSettings {
    }
 
    constructor(
-      proxy: ProxyDeviceImpl,
+      proxy: ProxyDevice,
       index: number,
       streamSettings: StreamSettings,
       settingsData: IDeviceInputSettingsSys
@@ -302,36 +248,25 @@ class InputSettings {
    }
 }
 
-class StreamSettings implements IDeviceStreamSettingsSys {
+class StreamSettings implements IDeviceStreamApi {
    enabled: Setting;
    samplesPerSec: Setting;
    streamName: string;
    inputSettings: InputSettings;
 
-   //If multiple streams share the hardware input they should reference the same InputSettings object
-   get inputIndex() {
-      return this.mInputIndex;
-   }
-
-   //hidden
-   mInputIndex: number;
-
-   setValues(other: IDeviceStreamSettingsSys) {
+   setValues(other: IDeviceStreamApi) {
       this.enabled.setValue(other.enabled);
       this.samplesPerSec.setValue(other.samplesPerSec);
       this.inputSettings.setValues(other.inputSettings);
    }
 
    constructor(
-      proxy: ProxyDeviceImpl,
+      proxy: ProxyDevice,
       streamIndex: number,
       inputIndex: number,
-      settingsData: IDeviceStreamSettingsSys
+      settingsData: IDeviceStreamApi
    ) {
-      this.streamName = proxy.physicalDevice
-         ? proxy.physicalDevice.testDeviceInfo.streamNames[streamIndex]
-         : kStreamNames[streamIndex];
-      this.mInputIndex = inputIndex;
+      this.streamName = kStreamNames[inputIndex];
 
       //enabled by default for now!
       this.enabled = new Setting(
@@ -352,7 +287,7 @@ class StreamSettings implements IDeviceStreamSettingsSys {
    }
 }
 
-class DeviceStreamConfigurationImpl implements IDeviceStreamConfiguration {
+class DeviceStreamConfiguration implements IDeviceStreamConfiguration {
    unitsInfo: UnitsInfo;
 
    constructor(
@@ -363,7 +298,7 @@ class DeviceStreamConfigurationImpl implements IDeviceStreamConfiguration {
    }
 }
 
-enum CytonState {
+enum ParserState {
    kUnknown,
    kIdle,
    kStartingSampling,
@@ -376,17 +311,17 @@ enum CytonState {
  * An object that handles parsing of data returned from the example device.
  * Note that this is device-specific and will need to be changed for any other device.
  */
-class CytonParser {
+class Parser {
    static kPacketSizeBytes = 33;
 
-   state: CytonState = CytonState.kUnknown;
+   state: ParserState = ParserState.kUnknown;
    lastError = '';
    bytesInPacket: number;
    packet: Buffer;
    expectedSampleCount: number; // is one byte (0 - 255)
    samplesPerSec: number;
 
-   proxyDevice: ProxyDeviceImpl | null = null;
+   proxyDevice: ProxyDevice | null = null;
 
    incrementExpectedSampleCount() {
       this.expectedSampleCount++;
@@ -397,7 +332,7 @@ class CytonParser {
    constructor(public inStream: IDuplexStream) {
       this.samplesPerSec = kDefaultSamplesPerSec;
       this.bytesInPacket = 0;
-      this.packet = Buffer.alloc(CytonParser.kPacketSizeBytes);
+      this.packet = Buffer.alloc(Parser.kPacketSizeBytes);
       this.expectedSampleCount = 0;
 
       //node streams default to 'utf8' encoding, which most devices won't understand.
@@ -412,7 +347,7 @@ class CytonParser {
    }
 
    isSampling(): boolean {
-      return CytonState.kIdle < this.state && this.state < CytonState.kError;
+      return ParserState.kIdle < this.state && this.state < ParserState.kError;
    }
 
    onError = (err: Error) => {
@@ -420,12 +355,12 @@ class CytonParser {
       console.warn(err);
    };
 
-   setProxyDevice(proxyDevice: ProxyDeviceImpl) {
+   setProxyDevice(proxyDevice: ProxyDevice) {
       this.proxyDevice = proxyDevice;
    }
 
    setSamplesPerSec(samplesPerSec: number): number {
-      //All Cyton input sample at the same rate
+      //All input samples are at the same rate
       if (this.samplesPerSec === samplesPerSec) {
          return samplesPerSec;
       }
@@ -455,14 +390,14 @@ class CytonParser {
       }
 
       this.inStream.write('b'); // OpenBCI begin sampling command
-      this.state = CytonState.kStartingSampling;
+      this.state = ParserState.kStartingSampling;
       this.expectedSampleCount = 0;
       //this.bytesInPacket = 0;
       return true;
    }
 
    stopSampling(): boolean {
-      this.state = CytonState.kIdle;
+      this.state = ParserState.kIdle;
       if (!this.inStream) return false; // Can't sample if no hardware connection
 
       this.inStream.write('s'); // OpenBCI begin sampling command
@@ -472,7 +407,6 @@ class CytonParser {
 
    processPacket(data: Buffer): boolean {
       const kStartOfDataIndex = 2;
-      const kEndOfDataIndex = 26;
 
       let lostSamples = 0;
 
@@ -511,29 +445,15 @@ class CytonParser {
          this.expectedSampleCount = data[1]; //resynch
       }
 
-      // Different test physical devices have a different first stream offset into the array
-      // of streams so that each device produces data that is more distinguishable from others.
-      const firstStreamIndex =
-         this.proxyDevice && this.proxyDevice.physicalDevice
-            ? this.proxyDevice.physicalDevice.testDeviceInfo.firstStreamIndex
-            : 0;
-
       let byteIndex = kStartOfDataIndex;
       for (
          let streamIndex = 0;
-         streamIndex < firstStreamIndex + nStreams;
+         streamIndex < nStreams;
          ++streamIndex, byteIndex += 3
       ) {
-         if (streamIndex < firstStreamIndex) {
-            continue;
-         }
-
-         const deviceStreamIndex = streamIndex - firstStreamIndex;
-
          // Don't produce data for disabled streams.
          if (
-            !this.proxyDevice.settings.dataInStreams[deviceStreamIndex].enabled
-               .value
+            !this.proxyDevice.settings.dataInStreams[streamIndex].enabled.value
          )
             continue;
 
@@ -545,7 +465,7 @@ class CytonParser {
             data[byteIndex + 2];
 
          const int16Val = value >> 8; // For now just taking the high 16 bits
-         outStreamBuffers[deviceStreamIndex].writeInt(int16Val);
+         outStreamBuffers[streamIndex].writeInt(int16Val);
       }
       this.incrementExpectedSampleCount();
       return true;
@@ -556,24 +476,23 @@ class CytonParser {
       if (!nBytes) return;
 
       let inOffset = 0;
-      const done = false;
 
       switch (this.state) {
-         case CytonState.kIdle:
+         case ParserState.kIdle:
             return;
 
-         case CytonState.kStartingSampling:
-            this.state = CytonState.kLookingForPacket;
+         case ParserState.kStartingSampling:
+            this.state = ParserState.kLookingForPacket;
             this.expectedSampleCount = 0;
             if (this.proxyDevice) this.proxyDevice.onSamplingStarted();
 
-         case CytonState.kLookingForPacket:
-         case CytonState.kSampling:
+         case ParserState.kLookingForPacket:
+         case ParserState.kSampling:
             while (this.bytesInPacket) {
                // Handle partial packet left over from last onData()
                // Copy some new bytes into stored packet to try to get a complete packet
                const nToCopy = Math.min(
-                  CytonParser.kPacketSizeBytes - this.bytesInPacket,
+                  Parser.kPacketSizeBytes - this.bytesInPacket,
                   nBytes
                );
                newBytes.copy(
@@ -584,17 +503,17 @@ class CytonParser {
                );
                this.bytesInPacket += nToCopy;
                inOffset += nToCopy;
-               if (this.bytesInPacket >= CytonParser.kPacketSizeBytes) {
+               if (this.bytesInPacket >= Parser.kPacketSizeBytes) {
                   //We have a full packet
                   if (
                      this.packet[0] === 0xa0 &&
                      this.processPacket(this.packet)
                   ) {
                      this.bytesInPacket = 0; //successfully processed all the bytes stored in this.packet
-                     this.state = CytonState.kSampling;
+                     this.state = ParserState.kSampling;
                   } else {
                      //Search for packet start char, in the stored packet
-                     this.state = CytonState.kLookingForPacket;
+                     this.state = ParserState.kLookingForPacket;
                      let startPos = this.packet[0] === 0xa0 ? 1 : 0; //Skip first byte if already checked
                      for (; startPos < this.bytesInPacket; ++startPos) {
                         if (this.packet[startPos] === 0xa0) {
@@ -610,7 +529,7 @@ class CytonParser {
                            this.bytesInPacket
                         );
                         this.bytesInPacket -= startPos;
-                        this.state = CytonState.kSampling;
+                        this.state = ParserState.kSampling;
                      } else {
                         this.bytesInPacket = 0; //scrap the saved bytes
                      }
@@ -619,34 +538,34 @@ class CytonParser {
             } //while (this.bytesInPacket)
 
             //Handle newBytes
-            while (nBytes - inOffset >= CytonParser.kPacketSizeBytes) {
-               if (this.state === CytonState.kLookingForPacket) {
+            while (nBytes - inOffset >= Parser.kPacketSizeBytes) {
+               if (this.state === ParserState.kLookingForPacket) {
                   //Search for packet start char in the newBytes
                   for (; inOffset < nBytes; ++inOffset) {
                      if (newBytes[inOffset] === 0xa0) {
-                        this.state = CytonState.kSampling;
+                        this.state = ParserState.kSampling;
                         break; //found possible start of packet
                      }
                   }
                }
 
-               if (this.state === CytonState.kLookingForPacket) break; //done
+               if (this.state === ParserState.kLookingForPacket) break; //done
 
                if (
                   !this.processPacket(
                      newBytes.slice(
                         inOffset,
-                        (inOffset += CytonParser.kPacketSizeBytes)
+                        (inOffset += Parser.kPacketSizeBytes)
                      )
                   )
                ) {
-                  inOffset -= CytonParser.kPacketSizeBytes - 1; //Start searching from the 2nd byte in last packet
-                  this.state = CytonState.kLookingForPacket;
+                  inOffset -= Parser.kPacketSizeBytes - 1; //Start searching from the 2nd byte in last packet
+                  this.state = ParserState.kLookingForPacket;
                }
             } //while(nBytes - inOffset >= CytonParser.kPacketSizeBytes)
 
             break;
-         case CytonState.kError:
+         case ParserState.kError:
             console.warn('Cyton parser: error state');
          default:
             console.warn('Cyton parser: unexpected state:', this.state);
@@ -654,7 +573,7 @@ class CytonParser {
 
       if (inOffset < nBytes) {
          //store partial packet
-         if (nBytes - inOffset > CytonParser.kPacketSizeBytes)
+         if (nBytes - inOffset > Parser.kPacketSizeBytes)
             console.warn('Trying to store too many left over bytes in packet');
          if (this.bytesInPacket)
             console.warn('Writing over left over bytes in packet');
@@ -751,58 +670,11 @@ const kDefaultRate: IDeviceSetting = {
 function getDefaultSettings() {
    const kDefaultSettings = {
       version: kSettingsVersion,
-      dataInStreams: [
-         {
-            enabled: kDefaultEnabled,
-            inputSettings: kDefaultInputSettings,
-            samplesPerSec: kDefaultRate
-         },
-         {
-            enabled: kDefaultEnabled,
-            inputSettings: kDefaultInputSettings,
-            samplesPerSec: kDefaultRate
-         },
-         {
-            enabled: kDefaultEnabled,
-            inputSettings: kDefaultInputSettings,
-            samplesPerSec: kDefaultRate
-         },
-         {
-            enabled: kDefaultEnabled,
-            inputSettings: kDefaultInputSettings,
-            samplesPerSec: kDefaultRate
-         },
-         {
-            enabled: kDefaultEnabled,
-            inputSettings: kDefaultInputSettings,
-            samplesPerSec: kDefaultRate
-         },
-         {
-            enabled: kDefaultEnabled,
-            inputSettings: kDefaultInputSettings,
-            samplesPerSec: kDefaultRate
-         },
-         {
-            enabled: kDefaultEnabled,
-            inputSettings: kDefaultInputSettings,
-            samplesPerSec: kDefaultRate
-         },
-         {
-            enabled: kDefaultEnabled,
-            inputSettings: kDefaultInputSettings,
-            samplesPerSec: kDefaultRate
-         },
-         {
-            enabled: kDefaultEnabled,
-            inputSettings: kDefaultInputSettings,
-            samplesPerSec: kDefaultRate
-         },
-         {
-            enabled: kDefaultEnabled,
-            inputSettings: kDefaultInputSettings,
-            samplesPerSec: kDefaultRate
-         }
-      ]
+      dataInStreams: kStreamNames.map(() => ({
+         enabled: kDefaultEnabled,
+         inputSettings: kDefaultInputSettings,
+         samplesPerSec: kDefaultRate
+      }))
    };
 
    return kDefaultSettings;
@@ -820,7 +692,7 @@ function getDefaultDisabledStreamSettings() {
 /**
  * The ProxyDevice object is created for each recording. Manages hardware settings and sampling.
  */
-export class ProxyDeviceImpl implements IProxyDevice {
+class ProxyDevice implements IProxyDevice {
    /**
     * Any state within "settings" will be saved / loaded by the application.
     */
@@ -836,11 +708,11 @@ export class ProxyDeviceImpl implements IProxyDevice {
     */
    outStreamBuffers: StreamRingBuffer[];
 
-   physicalDevice: TestPhysicalDevice | null;
+   physicalDevice: PhysicalDevice | null;
    proxyDeviceSys: ProxyDeviceSys | null;
 
    //Only non-null if this proxy is the one with a lock on the PhysicalDevice
-   parser: CytonParser | null;
+   parser: Parser | null;
 
    /**
     * @returns if the device is sampling
@@ -850,10 +722,10 @@ export class ProxyDeviceImpl implements IProxyDevice {
       return this.parser ? this.parser.isSampling() : false;
    }
 
-   // Pass null for TestPhysicalDevice when proxy created in absence of hardware
+   // Pass null for PhysicalDevice when proxy created in absence of hardware
    constructor(
       quarkProxy: ProxyDeviceSys | null,
-      physicalDevice: TestPhysicalDevice | null,
+      physicalDevice: PhysicalDevice | null,
       settings: IDeviceProxySettingsSys
    ) {
       this.outStreamBuffers = [];
@@ -861,10 +733,6 @@ export class ProxyDeviceImpl implements IProxyDevice {
       this.physicalDevice = physicalDevice;
       this.parser = null;
       this.lastError = null;
-
-      // const nStreams = physicalDevice
-      //    ? physicalDevice.getNumberOfAnalogStreams()
-      //    : 0;
 
       /**
        * Initialize the settings for the device to defaults or cloned settings passed in.
@@ -879,34 +747,15 @@ export class ProxyDeviceImpl implements IProxyDevice {
       this.initializeSettings(settings);
    }
 
-   clone(quarkProxy: ProxyDeviceSys | null): ProxyDeviceImpl {
-      if (kEnableLogging) console.log('TestProxyDevice.clone()');
-      return new ProxyDeviceImpl(
-         quarkProxy,
-         this.physicalDevice,
-         this.settings
-      );
+   clone(quarkProxy: ProxyDeviceSys | null): ProxyDevice {
+      if (kEnableLogging) console.log('ProxyDevice.clone()');
+      return new ProxyDevice(quarkProxy, this.physicalDevice, this.settings);
    }
 
    release(): void {
       if (this.proxyDeviceSys) {
          this.proxyDeviceSys.release();
       }
-   }
-
-   static defaultSettings(physicalDevice: TestPhysicalDevice | null) {
-      const defaults = getDefaultSettings();
-
-      if (!physicalDevice) {
-         return defaults;
-      }
-
-      return {
-         ...defaults,
-         dataInStreams: physicalDevice.testDeviceInfo.streamNames.map(
-            (s, index) => defaults.dataInStreams[index]
-         )
-      };
    }
 
    /**
@@ -916,10 +765,8 @@ export class ProxyDeviceImpl implements IProxyDevice {
     * @param nStreams The number of default streams to initialize for.
     */
    initializeSettings(settingsData: IDeviceProxySettingsSys) {
-      const defaultSettings = ProxyDeviceImpl.defaultSettings(
-         this.physicalDevice
-      );
-      this.settings = ProxyDeviceImpl.defaultSettings(this.physicalDevice);
+      const defaultSettings = getDefaultSettings();
+      this.settings = getDefaultSettings();
       this.settings.dataInStreams = [];
 
       const nDeviceStreams = this.physicalDevice
@@ -980,7 +827,7 @@ export class ProxyDeviceImpl implements IProxyDevice {
          this.updateStreamSettings(
             streamIndex,
             streamSettings,
-            new DeviceStreamConfigurationImpl(
+            new DeviceStreamConfiguration(
                streamSettings.inputSettings.range.value as number
             ),
             false // No need to restart any sampling for, say, undo / redo
@@ -1082,7 +929,7 @@ export class ProxyDeviceImpl implements IProxyDevice {
     * @returns if the operation succeeded
     */
    setPhysicalDevice(physicalDevice: OpenPhysicalDevice): boolean {
-      this.physicalDevice = physicalDevice as TestPhysicalDevice;
+      this.physicalDevice = physicalDevice as PhysicalDevice;
 
       if (kEnableLogging) console.log('setPhysicalDevice()');
       // If the hardware capabilities have changed, this is where the process
@@ -1105,7 +952,7 @@ export class ProxyDeviceImpl implements IProxyDevice {
     * @returns whether the operation succeeded.
     */
    setSettings(settings: IDeviceProxySettingsSys) {
-      if (kEnableLogging) console.log('TestProxyDevice.setSettings()');
+      if (kEnableLogging) console.log('ProxyDevice.setSettings()');
       // Create the settings structure, copying our saved settings info into it.
       this.initializeSettings(settings);
 
@@ -1290,35 +1137,6 @@ export class ProxyDeviceImpl implements IProxyDevice {
    }
 }
 
-//TODO: the plugin test device should probably implement this!
-// export class TestDeviceSettingsUI implements IPluginModuleDeviceUI {
-//    name = 'Test Device Sampling Settings';
-//    type: PluginFeatureTypes = 'Device UI';
-
-//    // The application will choose our UI for any devices of this class.
-//    deviceClassName: string = kTestOpenDeviceClassName;
-
-//    getStreamSettingsUI(
-//       settings: IDeviceStreamSettingsSys,
-//       streamIndex: number,
-//       recording: IRecording
-//    ): IDeviceUIArea {
-//       return describeDefaultStreamSettingsUI(settings, streamIndex, recording, {
-//          signalType: 'Input Amplifier',
-//          inputInfo: 'TestOpenDevice, ' + kStreamNames[streamIndex]
-//       });
-//    }
-
-//    dispose() {}
-// }
-
-type TestPhysicalDeviceInfo = {
-   deviceName: string;
-   streamNames: string[];
-   connectionIndex: TestDeviceFakeConnectionIndices;
-   firstStreamIndex: number; // Allow different test physical devices to have different data in their streams
-};
-
 /**
  * The device class is the set of types of device that can share the same settings so that
  * when a recording is re-opened, Quark will try to match device proxies read from disk to
@@ -1327,32 +1145,17 @@ type TestPhysicalDeviceInfo = {
  * objects of its class, as well as the ProxyDevice objects.
  */
 export class DeviceClass implements IDeviceClass {
-   physicalDevices: TestPhysicalDevice[] = []; //Testing only!
-
-   constructor(
-      private testClassName: string,
-      private testDeviceClassId: string,
-      public testPhysDeviceInfos: TestPhysicalDeviceInfo[]
-   ) {}
-
-   /**
-    * Optional method for testing only!
-    */
-   clearPhysicalDevices(): void {
-      for (const device of this.physicalDevices) {
-         device.release();
-      }
-
-      this.physicalDevices = [];
-   }
-
    /**
     * Called when the app shuts down. Chance to release any resources acquired during this object's
     * life.
     */
-   release(): void {
-      this.clearPhysicalDevices();
-   }
+   release(): void {}
+
+   /**
+    * Required member for devices that support being run against Lightning's
+    * test suite.
+    */
+   clearPhysicalDevices(): void {}
 
    onError(err: Error): void {
       console.error(err);
@@ -1362,14 +1165,15 @@ export class DeviceClass implements IDeviceClass {
     * @returns the name of the class of devices
     */
    getDeviceClassName(): string {
-      return this.testClassName;
+      return 'SerialSettings';
    }
 
    /**
     * @returns a GUID to identify this object
     */
    getClassId() {
-      return this.testDeviceClassId;
+      // UUID generated using https://www.uuidgenerator.net/version1
+      return 'e60ce0c8-b107-11ea-b3de-0242ac130004';
    }
 
    /**
@@ -1390,17 +1194,7 @@ export class DeviceClass implements IDeviceClass {
    }
 
    devicePathIsOneOfOurs(devicePath: string): boolean {
-      if (!devicePath.startsWith('TestDevicePath_')) return false;
-
-      const testDeviceIndex = DeviceClass.testDeviceIndexFromConnectionPath(
-         devicePath
-      );
-
-      return (
-         this.testPhysDeviceInfos.findIndex(
-            info => info.connectionIndex === testDeviceIndex
-         ) >= 0
-      );
+      return devicePath.startsWith('TestDevicePath_0');
    }
 
    /**
@@ -1445,46 +1239,15 @@ export class DeviceClass implements IDeviceClass {
          // See if we got '$$$'
          const endPos = resultStr.indexOf('$$$');
 
-         // All test device version information begin with the test device path in order
-         // to distinguish between different test devices. Look at the index of this path
-         // and see if it's ours.
-         const kTestConnectionPrefix = '{{TestDevicePath_';
          const testConnectionPrefixPos = resultStr.indexOf('{{TestDevicePath_');
 
          if (endPos !== -1 && testConnectionPrefixPos === 0) {
-            const testConnectionIndex = parseInt(
-               resultStr
-                  .substring(kTestConnectionPrefix.length)
-                  .replace(/(^\d+)(.+$)/i, '$1'),
-               10
-            );
+            // We found a test device
+            devStream.destroy(); // stop 'data' and 'error' callbacks
 
-            let startPos = -1;
-            const physicalDeviceIndex = this.testPhysDeviceInfos.findIndex(
-               info => info.connectionIndex === testConnectionIndex
-            );
+            const physicalDevice = new PhysicalDevice(this, deviceConnection);
 
-            if (physicalDeviceIndex >= 0) {
-               startPos = resultStr.indexOf('TestDevice V');
-            }
-
-            if (startPos >= 0) {
-               // We found a test device
-               devStream.destroy(); // stop 'data' and 'error' callbacks
-
-               const versionInfo = resultStr.slice(startPos, endPos);
-
-               const physicalDevice = new TestPhysicalDevice(
-                  this,
-                  deviceConnection,
-                  versionInfo,
-                  this.testPhysDeviceInfos,
-                  physicalDeviceIndex,
-                  this.testClassName === 'TestOpenBCI'
-               );
-               this.physicalDevices.push(physicalDevice);
-               callback(null, physicalDevice);
-            }
+            callback(null, physicalDevice);
          }
       });
 
@@ -1505,12 +1268,12 @@ export class DeviceClass implements IDeviceClass {
    createProxyDevice(
       quarkProxy: ProxyDeviceSys | null,
       physicalDevice: OpenPhysicalDevice | null
-   ): ProxyDeviceImpl {
-      const physicalTestDevice = physicalDevice as TestPhysicalDevice | null;
-      return new ProxyDeviceImpl(
+   ): ProxyDevice {
+      const physicalTestDevice = physicalDevice as PhysicalDevice | null;
+      return new ProxyDevice(
          quarkProxy,
          physicalTestDevice,
-         ProxyDeviceImpl.defaultSettings(physicalTestDevice)
+         getDefaultSettings()
       );
    }
 
@@ -1518,104 +1281,10 @@ export class DeviceClass implements IDeviceClass {
       descriptor: OpenPhysicalDeviceDescriptor,
       availablePhysDevices: OpenPhysicalDeviceDescriptor[]
    ): number {
-      // Device id (serial number or connection info) exact match is highest priority.
-      const indexOfexactMatch = availablePhysDevices.findIndex(
-         cur => cur.deviceId === descriptor.deviceId
-      );
-
-      if (indexOfexactMatch >= 0) {
-         return indexOfexactMatch;
-      }
-
-      type DeviceMatch = {
-         device: OpenPhysicalDeviceDescriptor;
-         index: number;
-      };
-
-      const sortByMatchQuality = (a: DeviceMatch, b: DeviceMatch) => {
-         const sortedByInputs =
-            Math.abs(descriptor.numInputs - a.device.numInputs) -
-            Math.abs(descriptor.numInputs - b.device.numInputs);
-
-         if (sortedByInputs !== 0) {
-            return sortedByInputs;
-         }
-
-         // If both devices have matching number of inputs, choose the first one.
-         return a.index - b.index;
-      };
-
-      // Filter down to devices of our classes type, and sort by best match.
-      const compatibleDevices = availablePhysDevices
-         .map((cur, index) => ({ device: cur, index }))
-         .filter(({ device }) =>
-            device.deviceType.startsWith(this.getDeviceClassName())
-         )
-         .sort(sortByMatchQuality);
-
-      return compatibleDevices.length > 0 ? compatibleDevices[0].index : -1;
+      return 0;
    }
 }
 
-export function getTestDeviceClasses() {
-   const openBciDeviceClassId = '45a2ecb2-326e-11ea-850d-2e728ce88125';
-   // UUID generated using https://www.uuidgenerator.net/version1
-
-   const allFakeDeviceNames = allFakeTestDeviceNames();
-
-   return [
-      new DeviceClass('TestOpenBCI', openBciDeviceClassId, [
-         {
-            deviceName: allFakeDeviceNames[0],
-            streamNames: kStreamNames.slice(0, 8),
-            firstStreamIndex: 0,
-            connectionIndex: TestDeviceFakeConnectionIndices.kTestDevice0
-         },
-         {
-            deviceName: allFakeDeviceNames[1],
-            streamNames: kStreamNames.slice(2, 4),
-            firstStreamIndex: 2,
-            connectionIndex: TestDeviceFakeConnectionIndices.kTestDevice1
-         },
-         {
-            deviceName: allFakeDeviceNames[2],
-            streamNames: kStreamNames.slice(4),
-            firstStreamIndex: 4,
-            connectionIndex: TestDeviceFakeConnectionIndices.kTestDevice2
-         }
-      ]),
-      new DeviceClass('TestNIBP', 'b07c9318-6c9c-11ea-bc55-0242ac130003', [
-         {
-            deviceName: allFakeDeviceNames[3],
-            streamNames: kStreamNames.slice(0, 6),
-            firstStreamIndex: 3,
-            connectionIndex: TestDeviceFakeConnectionIndices.kNIBP0
-         }
-      ]),
-      new DeviceClass('TestKent', 'f80efc66-6ca1-11ea-bc55-0242ac130003', [
-         {
-            deviceName: allFakeDeviceNames[4],
-            streamNames: [
-               'Time',
-               'Peak Pressure',
-               'Tidal Volume',
-               'Measured MV',
-               'RR',
-               'Target P',
-               'PEEP',
-               'Pressure',
-               'Pad',
-               'Body Temp'
-            ],
-            firstStreamIndex: 0,
-            connectionIndex: TestDeviceFakeConnectionIndices.kKent0
-         }
-      ])
-   ];
+export function getDeviceClasses() {
+   return [new DeviceClass()];
 }
-
-module.exports = {
-   getDeviceClasses() {
-      return getTestDeviceClasses();
-   }
-};

@@ -17,6 +17,8 @@
  *   objects of its class, as well as the ProxyDevice objects.
  */
 
+/* eslint-disable no-fallthrough */
+
 import {
    DuplexDeviceConnection,
    StreamRingBuffer,
@@ -26,7 +28,7 @@ import {
    IDeviceSetting,
    DeviceValueType,
    IDeviceInputSettingsSys,
-   IDeviceStreamSettingsSys,
+   IDeviceStreamApi,
    UnitsInfo,
    UnitPrefix,
    IDuplexStream,
@@ -202,13 +204,13 @@ class InputSettings {
    }
 }
 
-class StreamSettings implements IDeviceStreamSettingsSys {
+class StreamSettings implements IDeviceStreamApi {
    enabled: any;
    samplesPerSec: any;
    streamName: string;
    inputSettings: InputSettings;
 
-   setValues(other: IDeviceStreamSettingsSys) {
+   setValues(other: IDeviceStreamApi) {
       this.enabled.setValue(other.enabled);
       this.samplesPerSec.setValue(other.samplesPerSec);
       this.inputSettings.setValues(other.inputSettings);
@@ -218,7 +220,7 @@ class StreamSettings implements IDeviceStreamSettingsSys {
       proxy: ProxyDevice,
       streamIndex: number,
       inputIndex: number,
-      settingsData: IDeviceStreamSettingsSys
+      settingsData: IDeviceStreamApi
    ) {
       this.enabled = new Setting(
          settingsData.enabled,

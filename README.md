@@ -1,6 +1,6 @@
 # LightningDeviceSDK
 
-The LightningDeviceSDK provides functionality to write device connection plugins in Javascript/Typescript for LabChart Lightning. This repo does not provide any functionality, only example files and typed interfaces. You will need LabChart Lightning with a valid license in order to run your device plugin.
+The LightningDeviceSDK provides functionality to write device connection plugins in Typescript for LabChart Lightning. This repo does not provide any functionality, only example files and typed interfaces. You will need LabChart Lightning with a valid license in order to run your device plugin.
 
 **\*\*The LightningDeviceSDK is currently under development and is subject to change.\*\***
 
@@ -45,21 +45,7 @@ npm install
 
 Note: `npm` is the Node Package Manager which comes with Node.js and should already be installed with the steps above.
 
-It is recommended to use ESLint to validate your Javascript as you're writing your device plugin:
-
-Run eslint on all source files under `development/`:
-
-```
-npm run lint
-```
-
-Or for an individual file:
-
-```
-npx run eslint yourFile.js
-```
-
-In order for your plugin to be loaded by Lighting it must be placed into the following location:
+In order for your plugin to be loaded by Lightning it must be placed into the following location (it is up to you to create these folders or simply run `npm run watch` explained below):
 
 (Windows)  
 `C:\Users\[USERNAME]\Documents\LabChart Lightning\Plugins\devices`
@@ -80,6 +66,10 @@ LabChart Lightning must be relaunched in order to pick up device plugin changes.
 ## Overview
 
 To get started implementing a device plugin, see the [Overview](OVERVIEW.md).
+
+## Advanced Topics
+
+Customizing Lightning's [user interface](DEVICE-UI.md) for your device.
 
 ## License
 
