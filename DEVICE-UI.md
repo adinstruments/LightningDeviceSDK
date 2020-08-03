@@ -34,7 +34,7 @@ module.exports = {
 
    // Register custom device UI class.
    getDeviceUIClasses(libs) {
-      return [new DeviceUI()];
+      return [new YourDeviceUI()];
    }
 }
 ```
@@ -160,4 +160,4 @@ describeStreamSettingsUI(settings) {
 
 Interface definitions can be found within `public/device-ui-api.ts`.
 
-These interfaces contain type annotations (in Typescript) and are usable in Typescript files. The import path must be relatively the same is in the examples as it is copied directly in-order to compile. E.g. Imports must always be from the path `../../public/device-api`
+These interfaces contain type annotations (in Typescript) and are usable in Typescript files. The import path must be relatively the same as in the examples as it is copied directly in-order to compile. E.g. Imports must always be from the path `../../public/device-api`
