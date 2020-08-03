@@ -26,20 +26,17 @@ import {
    IDeviceSettingsApi,
    IDeviceManagerApi,
    IUIAreaApi
-} from '../../../public/device-api';
+} from '../../public/device-api';
 
-import { Setting } from '../../../public/device-settings';
+import { Setting } from '../../public/device-settings';
 
-import { UnitsInfoImpl } from '../../../public/device-units';
+import { UnitsInfoImpl } from '../../public/device-units';
 
-import {
-   DuplexStream,
-   concatTypedArrays
-} from '../../../public/device-streams';
+import { DuplexStream, concatTypedArrays } from '../../public/device-streams';
 
-import { StreamRingBufferImpl } from '../../../public/stream-ring-buffer';
+import { StreamRingBufferImpl } from '../../public/stream-ring-buffer';
 
-import { PluginFeatureTypes } from '../../../public/plugin-api';
+import { PluginFeatureTypes } from '../../public/plugin-api';
 
 /**
  * Device driver for FMS Nano Core OEM
@@ -2611,6 +2608,11 @@ class NIBPNanoUI implements IDeviceUIApi {
       const testModeEnabled = !!settings.testMode.value;
 
       elements.push({
+         type: 'device-name',
+         title: 'Configure NIBP Device'
+      });
+
+      elements.push({
          type: 'header',
          title: 'Sampling setup'
       });
@@ -2663,6 +2665,7 @@ class NIBPNanoUI implements IDeviceUIApi {
          elements.push({
             type: 'message',
             label: '',
+
             text: NIBPNanoUI.lastHcuStatus
          });
       }

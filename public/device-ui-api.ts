@@ -12,15 +12,16 @@ import {
    DeviceInputActionTypes,
    DeviceInputStatusTypes,
    IDeviceManagerApi,
-   IDeviceSettingsApi
+   IDeviceSettingsApi,
+   HierarchyOfDeviceSettingsBase
 } from './device-api';
 import { IPluginModuleFeature, ILcModel } from './plugin-api';
-import { HierarchyOfDeviceSettingsBase } from 'libs/quark';
 
 export type DeviceUIElementTypes =
    | 'setting' // Persisted in settings. The most common element.
    | 'adjustable-value' // Non-persisted control over a hardware option.
    | 'read-only-value'
+   | 'device-name'
    | 'header'
    | 'message'
    | 'action'
@@ -353,6 +354,7 @@ export type IUIElementApi =
    | ({ type: 'adjustable-value' } & IDeviceUIAdjustableValue)
    | ({ type: 'read-only-value' } & IDeviceUIReadOnlyItem)
    | ({ type: 'header' } & IDeviceUIHeader)
+   | ({ type: 'device-name' } & IDeviceUIHeader)
    | ({ type: 'message' } & IDeviceUIMessage)
    | ({ type: 'action' } & IDeviceUIAction)
    | ({ type: 'multi-step-action' } & IDeviceUIMultiStepAction)
