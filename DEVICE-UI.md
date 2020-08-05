@@ -43,6 +43,8 @@ Similar to device class registration, LabChart Lightning calls `getDeviceUIClass
 
 On launch, LabChart Lightning loads all plugins. If there is a problem loading the plugin, information about the error can be obtained by clicking the (...) button highlighted in red in the image below:
 
+![Error loading plugin](images/plugin-error.gif)
+
 ### Device UI Class
 
 ```ts
