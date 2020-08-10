@@ -15,7 +15,7 @@ See [Changelog](CHANGELOG.md).
 
 ## Upcoming features
 
--  Multiple device syncronization
+-  Arduino cores to improve device synchronization for SAMD51 and SAMD21 based boards
 -  Better error messaging
 
 ## Getting Started
@@ -34,6 +34,9 @@ Install the needed dependencies:
 -  Node.js - https://nodejs.org/en/download/
 -  Visual Studio Code - https://code.visualstudio.com/download
    -  Install VS Code extension: ESLint
+- Arduino IDE - https://www.arduino.cc/en/Main/Software
+   - Arduino core(s) for the intended board(s)
+   - Optionally, the Arduino extension for Visual Studio Code
 
 Clone this repo to your working environment
 
@@ -70,6 +73,8 @@ To get started implementing a device plugin, see the [Overview](OVERVIEW.md).
 ## Advanced Topics
 
 Customizing Lightning's [user interface](DEVICE-UI.md) for your device.
+
+Inter-device time synchronization [time synch](TIME-SYNCH.md)
 
 ## License
 
