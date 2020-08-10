@@ -395,12 +395,12 @@ class CytonParser {
 
          case CytonState.kLookingForPacket:
          case CytonState.kSampling:
-            while (this.bytesInPacket) {
+            while (this.bytesInPacket && inOffset < nBytes) {
                // Handle partial packet left over from last onData()
                // Copy some new bytes into stored packet to try to get a complete packet
                const nToCopy = Math.min(
                   CytonParser.kPacketSizeBytes - this.bytesInPacket,
-                  nBytes
+                  nBytes - inOffset
                );
                newBytes.copy(
                   this.packet,
@@ -457,6 +457,7 @@ class CytonParser {
                }
 
                if (this.state === CytonState.kLookingForPacket) break; // done
+               if (nBytes - inOffset < CytonParser.kPacketSizeBytes) break; //done - not enough remaining newBytes
 
                if (
                   !this.processPacket(
@@ -1079,9 +1080,12 @@ class DeviceClass implements IDeviceClass {
       deviceConnection: DuplexDeviceConnection,
       callback: (error: Error | null, device: OpenPhysicalDevice | null) => void
    ): void {
+      const vid = deviceConnection.vendorId.toUpperCase();
+      const pid = deviceConnection.productId.toUpperCase();
+
       if (
-         deviceConnection.vendorId !== '0403' ||
-         deviceConnection.productId !== '6015' ||
+         vid !== '0403' ||
+         pid !== '6015' ||
          deviceConnection.manufacturer !== 'FTDI'
       ) {
          callback(null, null); // Did not find one of our devices on this connection
