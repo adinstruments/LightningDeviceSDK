@@ -113,16 +113,11 @@ if (! adcTimer.PWMout(true, 0, TIMER4_OUT0)) {
 TC4->COUNT32.EVCTRL.reg |= TC_EVCTRL_MCEO0;
 while (TC4->COUNT32.SYNCBUSY.reg > 0);                // Wait for synchronization
 
-//Setup Event system
+//Setup Event system so TC4 triggers ADC conversion start
 MCLK->APBBMASK.reg |= MCLK_APBBMASK_EVSYS;
 
   // Select the event system user on channel 0 (USER number = channel number + 1)
 EVSYS->USER[EVSYS_ID_USER_ADC0_START].reg = EVSYS_USER_CHANNEL(1);         // Set the event user (receiver) as timer TC0
-
-// EVSYS->CHANNEL.reg = EVSYS_CHANNEL_EDGSEL_NO_EVT_OUTPUT |               // No event edge detection
-//                      EVSYS_CHANNEL_PATH_ASYNCHRONOUS |                  // Set event path as asynchronous
-//                      EVSYS_CHANNEL_EVGEN(EVSYS_ID_GEN_TC4_MCX_0) |      // Set event generator (sender) as TC4 Match/Capture 0
-//                      EVSYS_CHANNEL_CHANNEL(0);                          // Attach the generator (sender) to channel 0                                 
 
 EVSYS->Channel[0].CHANNEL.reg = EVSYS_CHANNEL_EDGSEL_NO_EVT_OUTPUT |               // No event edge detection
                      EVSYS_CHANNEL_PATH_ASYNCHRONOUS |                  // Set event path as asynchronous
@@ -133,25 +128,6 @@ adcTimer.enable(true);
 
 void adc_setup()
 {
-   //Setup event system so TC4 triggers ADC conversion start
-//PM->APBCMASK.reg |= PM_APBCMASK_EVSYS;                                  // Switch on the event system peripheral
-
-// while(GCLK->SYNCBUSY.reg & GCLK_STATUS_SYNCBUSY);
-// GCLK->CLKCTRL.reg = GCLK_CLKCTRL_CLKEN |        // Enable the generic clock...
-//                       GCLK_CLKCTRL_GEN_GCLK0 |    // On GCLK0 at 48MHz
-//                       GCLK_CLKCTRL_ID( GCM_EVSYS_CHANNEL_0 );    // Route GCLK0 to EVENT channel
-
-// while (GCLK->STATUS.bit.SYNCBUSY);              // Wait for synchronization
-
-
-// EVSYS->USER.reg = EVSYS_USER_CHANNEL(1) |                               // Attach the event user (receiver) to channel 0 (n + 1)
-//                   EVSYS_USER_USER(EVSYS_ID_USER_ADC_START);             // Set the event user (receiver) as ADC START
-
-// EVSYS->CHANNEL.reg = EVSYS_CHANNEL_EDGSEL_NO_EVT_OUTPUT |               // No event edge detection
-//                      EVSYS_CHANNEL_PATH_ASYNCHRONOUS |                  // Set event path as asynchronous
-//                      EVSYS_CHANNEL_EVGEN(EVSYS_ID_GEN_TC4_MCX_0) |      // Set event generator (sender) as TC4 Match/Capture 0
-//                      EVSYS_CHANNEL_CHANNEL(0);                          // Attach the generator (sender) to channel 0                                 
-
 //Setup ADC
 
 analogReadResolution(12);
@@ -171,7 +147,6 @@ syncADC0_INPUTCTRL();
 
 //PM->APBCMASK.reg |= PM_APBCMASK_ADC; already done by wiring.c
 
-//ADC->INPUTCTRL.reg
 ADC0->EVCTRL.reg = ADC_EVCTRL_STARTEI; //Start on event
 
 ADC0->INTENSET.reg = ADC_INTENSET_RESRDY; //Enable interrupt on result ready
