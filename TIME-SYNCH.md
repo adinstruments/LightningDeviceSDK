@@ -12,22 +12,26 @@ The rate error is caused by the crystal oscillators in the devices not having ex
 There are currently three techniques Lightning can use to reduce both these types of error which can result in adequate synchronisation for many purposes. These techniques rely on Lightning resampling data from the devices, using information provided by those devices, so the recorded samples are aligned as accurately as possible across channels.
 
 These techniques are:
-1. Sample-counting time synch (typical error +/- 100 ms)
+1. USB-frame time synch (typical error +/- 50 µs)
 2. Round-trip time synch (typical error +/- 1 ms)
-3. USB-frame time synch (typical error +/- 50 µs)
+3. Sample-counting time synch (typical error +/- 100 ms)
 
-USB-frame time synch is the most accurate technique and is currently used by PowerLabs. It requires that the devices are plugged into the same USB hub so the USB Start Of Frame (SOF) signal can be used to provide a common 'clock' that can be read by all devices. This results in an error < +/- 50 us for devices with firmware support for this. A future version of the SDK is likely to provide example support for USB-frame time synch for MicroChip SAMD51 and SAMD21 boards.
+### USB-frame time synch
+USB-frame time synch is the most accurate technique and is currently used by PowerLabs. It requires that the devices are plugged into the same USB hub so the USB Start Of Frame (SOF) signal can be used to provide a common 'clock' that can be read by all devices. This results in an error < +/- 50 us for devices with firmware support for this. A future version of the SDK is likely to provide example support for USB-frame time synch for MicroChip SAMD51 and SAMD21 microcontrollers.
 
-Round-trip time synch can provide an error < +/- 1 ms and requires the firmware and the device script to implement support for two measurements
+### Round-trip time synch
+Round-trip time synch can provide an error < +/- 1 ms and requires the firmware and the device script to implement support for two measurements:
 1. an immediate read of the device's clock
 2. the time of the device's clock at which the first sample in the sampling session was measured
 
 The ArduinoRoundTrip.ts script in the SDK, along with the example firmware for the Arduino (DueLightning, SAMD51Lightning and SAMDLightning) show how to implement the two measurments required for round-trip time synch.
-
-Sample-counting time synch requires no support from the device script or the firmware, so Lightning falls back to using this if the ProxyDevice in the device script does not implement the methods required for round-trip timing:
+To support Round-trip time synch the ProxyDevice in the Typescript device script must implement 3 methods:
 - getRemoteTimePointInfo()
 - getRemoteTime()
 - onRemoteTimeEvent()
+
+### Sample-counting time synch
+Sample-counting time synch requires no support from the device script or the firmware, so Lightning falls back to using this if the ProxyDevice in the device script does not implement the 3 methods required for round-trip timing.
 
 For sample-counting time synch Lightning counts the samples from each device and assumes that over a long time period the same number of samples should arrive from each device, when corrected for the nominal sampling rate of each signal. This generally results in an inter-device timing error within +/- 100 ms for devices with a crystal oscillator rate error < 1 part in 10000.
 
