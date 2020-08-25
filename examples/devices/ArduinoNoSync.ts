@@ -33,6 +33,7 @@ import {
    DeviceValueType,
    IDeviceInputSettingsSys,
    IDeviceStreamApi,
+   IDeviceStreamApiImpl,
    UnitsInfo,
    UnitPrefix,
    IDuplexStream,
@@ -274,11 +275,19 @@ class InputSettings {
    }
 }
 
-class StreamSettings implements IDeviceStreamApi {
+class StreamSettings implements IDeviceStreamApiImpl {
    enabled: Setting;
    samplesPerSec: Setting;
    streamName: string;
    inputSettings: InputSettings;
+
+   get isEnabled() {
+      return !!this.enabled.value;
+   }
+
+   set isEnabled(enabled: boolean) {
+      this.enabled.value = enabled;
+   }
 
    setValues(other: IDeviceStreamApi) {
       this.enabled.setValue(other.enabled);
@@ -569,20 +578,16 @@ class ProxyDevice implements IProxyDevice {
 
          let streamSettingsData = settingsData.dataInStreams[streamIndex];
 
-         // Use disabled settings if stream is beyond the end of the number stored
-         // in the settings or is beyond the number supported by the current physical
+         // Disable the stream if it is beyond the end of the number stored
+         // in the existing settings or is beyond the number supported by the current physical
          // device.
-         if (
-            !streamSettingsData ||
-            streamIndex >= defaultSettings.dataInStreams.length
-         ) {
+         if (!streamSettingsData) {
+            //There are no existing settings for this stream for this hardware
             streamSettingsData = defaultDisabledStreamSettings;
-         } else {
-            // Conversely, if stream has been disabled because we were mapped to a device
-            // having fewer inputs, re-enable the stream by default so it will sample
-            // with the new device.
-            streamSettingsData.enabled =
-               defaultSettings.dataInStreams[streamIndex].enabled;
+         } else if (streamIndex >= defaultSettings.dataInStreams.length) {
+            //There is an existing setting for a stream not supported by the current hardware.
+            //Keep the settings but disable the stream.
+            streamSettingsData.enabled.value = false;
          }
 
          //If multiple streams share the hardware input they should reference the same InputSettings object
@@ -843,7 +848,7 @@ class ProxyDevice implements IProxyDevice {
       this.outStreamBuffers = [];
       let index = 0;
       for (const stream of this.settings.dataInStreams) {
-         if (stream && stream.enabled) {
+         if (stream && stream.isEnabled) {
             const nSamples = Math.max(
                bufferSizeInSecs *
                   ((stream.samplesPerSec as IDeviceSetting).value as number),

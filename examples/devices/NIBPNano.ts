@@ -10,6 +10,7 @@ import {
    DeviceValueType,
    IDeviceInputSettingsSys,
    IDeviceStreamApi,
+   IDeviceStreamApiImpl,
    UnitsInfo,
    UnitPrefix,
    IDuplexStream,
@@ -616,11 +617,19 @@ class InputSettings {
    }
 }
 
-class StreamSettings implements IDeviceStreamApi {
+class StreamSettings implements IDeviceStreamApiImpl {
    enabled: any;
    samplesPerSec: any;
    streamName: string;
    inputSettings: InputSettings;
+
+   get isEnabled() {
+      return !!this.enabled.value;
+   }
+
+   set isEnabled(enabled: boolean) {
+      this.enabled.value = enabled;
+   }
 
    setValues(other: IDeviceStreamApi) {
       this.enabled.setValue(other.enabled);
@@ -2375,7 +2384,7 @@ class ProxyDevice implements IProxyDevice {
       this.outStreamBuffers = [];
       let index = 0;
       for (const stream of this.settings.dataInStreams) {
-         if (stream && stream.enabled) {
+         if (stream && stream.isEnabled) {
             const nSamples = Math.max(
                bufferSizeInSecs *
                   ((stream.samplesPerSec as IDeviceSetting).value as number),

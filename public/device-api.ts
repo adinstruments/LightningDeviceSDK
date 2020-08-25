@@ -254,8 +254,12 @@ export interface OpenPhysicalDevice {
 
 export interface IDeviceStreamApi extends HierarchyOfDeviceSettingsBase {
    inputSettings: IDeviceInputSettingsSys;
-   enabled: IDeviceSetting;
+
+   enabled: IDeviceSetting; //N.B. enabled.value is most likely what you need!
+
    samplesPerSec: IDeviceSetting;
+
+   //isEnabled: boolean; //AKA this.enabled.value
 
    /**
     * Optional setting for the index of physical input produced by the device to
@@ -267,6 +271,13 @@ export interface IDeviceStreamApi extends HierarchyOfDeviceSettingsBase {
    // The following are currently supplied by PowerLabs.
    userEnabled?: boolean;
    streamInDevice?: number;
+
+   //Indicates whether or not Quark expects this stream to sample (mainly for testing)
+   quarkStreamEnabled?: boolean;
+}
+
+export interface IDeviceStreamApiImpl extends IDeviceStreamApi {
+   isEnabled: boolean; //getter returning this.enabled.value
 }
 
 export interface IDeviceSettingsApi extends HierarchyOfDeviceSettingsBase {}
