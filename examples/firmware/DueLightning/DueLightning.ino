@@ -11,6 +11,18 @@
 */
 #define Serial SerialUSB
 
+
+const int kMaxCommandLenBytes = 64;
+const int kMaxADCChannels = 8;   //pins A0 to A7
+const int kADCChannels = 3;      //Contiguous channels starting from pin A0
+const int kBytesPerSample = sizeof(int16_t);
+
+//We use two sizes of data packet, one for low sampling rates, with just one point per packet
+//and one for higher sampling rates with 10 points per packet.
+const int kPointsPerPacket = 1;
+const int kPointsPerMediumSizePacket = 10;
+
+
 /**
  * \brief Set RC on the selected channel.
  *
@@ -228,23 +240,27 @@ Transfer Period = (TRANSFER * 2 + 3) ADCClock periods.
   ADC->ADC_IDR = 0xFFFFFFFF ;   // disable interrupts
   ADC->ADC_IER = 0x80 ;         // enable AD7 End-Of-Conv interrupt (Arduino pin A0)
   ADC->ADC_CHDR = 0xFFFF ;      // disable all channels
-  //ADC->ADC_CHER = 0x80 ;        // enable just A0
-  ADC->ADC_CHER = 0xc0 ;        // enable A1 and A0 (2 ADC channels, interrupt on the last one, AD7 only)
+
+  int enabledChans = 0;
+  int enableBit = 0x80;   //Start by enabling AD7 (pin A0)
+  int nChan = max(kADCChannels, kMaxADCChannels);
+  for(int ch(0);ch<nChan;++ch)
+    {
+    enabledChans |= enableBit;
+    enableBit >>= 1;   
+    }
+  ADC->ADC_CHER = enabledChans & 0xff ;        // enable A1 and A0 (2 ADC channels, interrupt on the last one, AD7 only)
+
   ADC->ADC_CGR = 0x15555555 ;   // All gains set to x1
   ADC->ADC_COR = 0x00000000 ;   // All offsets off
  
   ADC->ADC_MR = (ADC->ADC_MR & 0xFFFFFFF0) | (1 << 1) | ADC_MR_TRGEN ;  // 1 = trig source TIO from TC0
 }
 
-template <class T, unsigned int Log2Size>
+template <class T, unsigned int Size>
 class RingBufferSized
    {
    public:
-      enum
-      {
-      kBufSize = 1<<Log2Size,
-      kLenMask = kBufSize-1,
-      };
 
    RingBufferSized() : mIn(0),mOut(0)
       {
@@ -257,12 +273,15 @@ class RingBufferSized
 
    int GetCount() const
    {
-   return (mIn-mOut) & kLenMask;
+   int result = mIn-mOut;
+   if(result < 0)
+      result += Size;
+   return result;
    }
 
    int GetSpace() const
    {
-   return kLenMask - GetCount();
+   return (Size - 1) - GetCount();
    }
 
    bool Push(T val)
@@ -270,7 +289,8 @@ class RingBufferSized
       if(GetSpace())
          {
          mBuffer[mIn++] = val;
-         mIn &= kLenMask;
+         if(mIn >= Size)
+            mIn -= Size;
          return true;
          }
       return false;
@@ -289,18 +309,20 @@ class RingBufferSized
 
       if(nToPushRemain)
          {//There is space
-         int lenToCopy1 = (kBufSize-mIn); //space available before wrapping
+         int lenToCopy1 = (Size-mIn); //space available before wrapping
          if(lenToCopy1 > nToPushRemain)
             lenToCopy1 = nToPushRemain;
          memcpy(mBuffer+mIn,val,lenToCopy1*sizeof(T));
          mIn += lenToCopy1;
-         mIn &= kLenMask;
+         if(mIn >= Size)
+            mIn -= Size;
          nToPushRemain -= lenToCopy1;
          if(nToPushRemain)
             {//still some left to copy, wrap to start of buffer
             memcpy(mBuffer,val+lenToCopy1,nToPushRemain*sizeof(T));
             mIn += nToPushRemain;
-            mIn &= kLenMask;
+            if(mIn >= Size)
+               mIn -= Size;
             }
          }
       return space; //Space is number pushed.
@@ -325,7 +347,8 @@ class RingBufferSized
    const T& GetNext()
       {
       const T& result = mBuffer[mOut++];
-      mOut &= kLenMask;
+      if(mOut >= Size)
+         mOut -= Size;
       return result;
       }
 
@@ -334,7 +357,8 @@ class RingBufferSized
       if(GetCount())
          {
          *val = mBuffer[mOut++];
-         mOut &= kLenMask;
+         if(mOut >= Size)
+            mOut -= Size;
          return true;
          }
       return false;
@@ -345,35 +369,28 @@ class RingBufferSized
       if(GetCount())
          {
          mOut++;
-         mOut &= kLenMask;
+         if(mOut >= Size)
+            mOut -= Size;
          return true;
          }
       return false;
       }
 
    protected:
-   T mBuffer[kBufSize];
+   T mBuffer[Size];
    volatile int mIn;
    volatile int mOut;
    };
 
 
 
-const int kMaxCommandLenBytes = 64;
-
-const int kADCChannels = 2; //must be power of 2 (for now)
-const int kBytesPerSample = sizeof(int16_t);
-
-//We use two sizes of data packet, one for low sampling rates, with just one point per packet
-//and one for higher sampling rates with 10 points per packet.
-const int kPointsPerPacket = 1;
-const int kPointsPerMediumSizePacket = 10;
 
 int gADCPointsPerPacket = kPointsPerPacket;
 
-const int kLog2BufferPoints = 13; //8192 points
+const int kTotalBufferSpaceBytes = 48000;
+const int kBufferPoints = kTotalBufferSpaceBytes/kBytesPerSample/kADCChannels;
 
-typedef RingBufferSized<int16_t, kLog2BufferPoints> TRingBuf;
+typedef RingBufferSized<int16_t, kBufferPoints> TRingBuf;
 
 TRingBuf gSampleBuffers[kADCChannels];
 
@@ -383,14 +400,7 @@ volatile uint64_t gFirstADCPoint64us = 0;
 
 void ADC_Handler (void)
 {
-int val0 = 0;
-int val1 = 0;
-if (ADC->ADC_ISR & ADC_ISR_EOC6)   // ensure there was an End-of-Conversion and we read the ISR reg
-   {
-   val1 = *(ADC->ADC_CDR+6);    // get conversion result
-   //digitalWrite(8, HIGH);
-   }
-
+//We know that if the SAM3 ADC channel 7 (pin A0) is done, all the other channels are already converted.
 if (ADC->ADC_ISR & ADC_ISR_EOC7)   // ensure there was an End-of-Conversion and we read the ISR reg
    {
    if(gState == kStartingSampling)
@@ -399,19 +409,23 @@ if (ADC->ADC_ISR & ADC_ISR_EOC7)   // ensure there was an End-of-Conversion and 
       gState = kHadFirstSample;
       }
 
-  val0 = *(ADC->ADC_CDR+7) ;    // get conversion result
-  //digitalWrite(12, HIGH);
+   int16_t val0 = *(ADC->ADC_CDR+7) ;    // get conversion result
+   //digitalWrite(12, HIGH);
 
-  if(gState > kStartingSampling)
-     {
-    //val = 2048; //send a hard 0 in 2nd channel (for testing only) !!
-     if(!gSampleBuffers[0].Push(val0))       // stick in circular buffer for A0
+   if(gState > kStartingSampling)
+      {
+      //val0 = 2048; //send a hard 0 in 1st channel (for testing only) !!
+      if(!gSampleBuffers[0].Push(val0))       // stick in circular buffer for A0
          digitalWrite(LED_BUILTIN, LOW);     //Turn off LED to indicate overflow
-     gSampleBuffers[1].Push(val1);           // stick in circular buffer for A1
 
-     dac_write (0xFFF & ~val0) ;             // copy inverted to DAC output FIFO
-     //Serial.print("\t");
-     //Serial.println(val,HEX);
+      dac_write (0xFFF & ~val0) ;             // copy inverted to DAC output FIFO
+      //Serial.print("\t");
+      //Serial.println(val,HEX);
+
+      for(int ch(1);ch<kADCChannels;++ch)
+         {
+         gSampleBuffers[ch].Push(*(ADC->ADC_CDR+7-ch));   
+         }
      }
   }
 
