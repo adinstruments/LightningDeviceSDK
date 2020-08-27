@@ -80,6 +80,7 @@ const kDefaultSamplesPerSec = 100;
 const kSampleRates = [
    //   16000.0,
    //   8000.0,
+   10000.0,
    4000.0,
    2000.0,
    1000.0,
@@ -166,7 +167,16 @@ export function gainCharFromPosFullScale(posFullScale: number) {
    return '0';
 }
 
-const kStreamNames = ['ADC Input 1', 'ADC Input 2'];
+const kStreamNames = [
+   'ADC Input 1',
+   'ADC Input 2',
+   'ADC Input 3',
+   'ADC Input 4',
+   'ADC Input 5',
+   'ADC Input 6',
+   'ADC Input 7',
+   'ADC Input 8'
+];
 
 const kEnableLogging = false;
 
@@ -193,6 +203,20 @@ export class PhysicalDevice implements OpenPhysicalDevice {
       versionInfo: string
    ) {
       this.numberOfChannels = kStreamNames.length;
+
+      const pattern = 'Channels: ';
+      const start = versionInfo.indexOf(pattern);
+      const channels = versionInfo.substring(start);
+      const findNumber = new RegExp('\\d+');
+      const nChanReg = channels.match(findNumber);
+
+      if (nChanReg && nChanReg.length == 1) {
+         const nChan = parseInt(nChanReg[0]);
+         if (1 <= nChan && nChan <= kStreamNames.length) {
+            this.numberOfChannels = nChan;
+         }
+      }
+
       this.serialNumber = `ArduinoRT-123`; //TODO: get this from versionInfo (which should be JSON)
 
       this.parser = new ParserWithSettings(deviceStream, this.numberOfChannels);
@@ -427,6 +451,10 @@ const kDefaultRate: IDeviceSetting = {
    value: kDefaultSamplesPerSec,
    options: [
       {
+         value: kSampleRates[6],
+         display: kSampleRates[6].toString() + ' Hz'
+      },
+      {
          value: kSampleRates[5],
          display: kSampleRates[5].toString() + ' Hz'
       },
@@ -453,10 +481,10 @@ const kDefaultRate: IDeviceSetting = {
    ]
 };
 
-function getDefaultSettings() {
+function getDefaultSettings(nStreams: number) {
    const kDefaultSettings = {
       version: kSettingsVersion,
-      dataInStreams: kStreamNames.map(() => ({
+      dataInStreams: kStreamNames.slice(0, nStreams).map(() => ({
          enabled: kDefaultEnabled,
          inputSettings: kDefaultInputSettings,
          samplesPerSec: kDefaultRate
@@ -551,8 +579,11 @@ class ProxyDevice implements IProxyDevice {
     * @param nStreams The number of default streams to initialize for.
     */
    initializeSettings(settingsData: IDeviceProxySettingsSys) {
-      const defaultSettings = getDefaultSettings();
-      this.settings = getDefaultSettings();
+      const nDefaultStreams = this.physicalDevice
+         ? this.physicalDevice.numberOfChannels
+         : settingsData.dataInStreams.length;
+      const defaultSettings = getDefaultSettings(nDefaultStreams);
+      this.settings = getDefaultSettings(nDefaultStreams);
       this.settings.dataInStreams = [];
 
       const nDeviceStreams = this.physicalDevice
@@ -1138,10 +1169,13 @@ export class DeviceClass implements IDeviceClass {
       physicalDevice: OpenPhysicalDevice | null
    ): ProxyDevice {
       const physicalTestDevice = physicalDevice as PhysicalDevice | null;
+      const nStreams = physicalTestDevice
+         ? physicalTestDevice.numberOfChannels
+         : 1;
       return new ProxyDevice(
          quarkProxy,
          physicalTestDevice,
-         getDefaultSettings()
+         getDefaultSettings(nStreams)
       );
    }
 
