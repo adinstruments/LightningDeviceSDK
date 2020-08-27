@@ -14,7 +14,7 @@
 
 const int kMaxCommandLenBytes = 64;
 const int kMaxADCChannels = 8;   //pins A0 to A7
-const int kADCChannels = 3;      //Contiguous channels starting from pin A0
+const int kADCChannels = 8;      //Contiguous channels starting from pin A0
 const int kBytesPerSample = sizeof(int16_t);
 
 //We use two sizes of data packet, one for low sampling rates, with just one point per packet
@@ -83,7 +83,7 @@ TC_Start(tc, channel);
 const int kDefaultADCPointsPerSec = 100; //~5000 max with 2 samples (1 point) per packet
 int gADCPointsPerSec = kDefaultADCPointsPerSec; //~5000 max with 2 samples (1 point) per packet
 
-const int kSampleRates[] = {4000, 2000, 1000, 400, 200, 100};
+const int kSampleRates[] = {10000, 4000, 2000, 1000, 400, 200, 100};
 const int kNSampleRates = sizeof(kSampleRates)/sizeof(int);
 
 inline uint32_t saveIRQState(void)
@@ -243,7 +243,7 @@ Transfer Period = (TRANSFER * 2 + 3) ADCClock periods.
 
   int enabledChans = 0;
   int enableBit = 0x80;   //Start by enabling AD7 (pin A0)
-  int nChan = max(kADCChannels, kMaxADCChannels);
+  int nChan = min(kADCChannels, kMaxADCChannels);
   for(int ch(0);ch<nChan;++ch)
     {
     enabledChans |= enableBit;
@@ -257,10 +257,11 @@ Transfer Period = (TRANSFER * 2 + 3) ADCClock periods.
   ADC->ADC_MR = (ADC->ADC_MR & 0xFFFFFFF0) | (1 << 1) | ADC_MR_TRGEN ;  // 1 = trig source TIO from TC0
 }
 
-template <class T, unsigned int Size>
+template <class T, int Size>
 class RingBufferSized
    {
    public:
+      typedef int TIndex;
 
    RingBufferSized() : mIn(0),mOut(0)
       {
@@ -271,15 +272,15 @@ class RingBufferSized
       mOut = mIn;
       }
 
-   int GetCount() const
+   TIndex GetCount() const
    {
-   int result = mIn-mOut;
+   TIndex result = mIn-mOut;
    if(result < 0)
       result += Size;
    return result;
    }
 
-   int GetSpace() const
+   TIndex GetSpace() const
    {
    return (Size - 1) - GetCount();
    }
@@ -297,10 +298,10 @@ class RingBufferSized
       }
 
    //Returns num pushed
-   int Push(const T *val, int nToPushIn)
+   int Push(const T *val, TIndex nToPushIn)
       {
-      int nToPushRemain = nToPushIn;
-      int space = GetSpace();
+      TIndex nToPushRemain = nToPushIn;
+      TIndex space = GetSpace();
 
       if(nToPushRemain > space)
          nToPushRemain = space; //limit to available space
@@ -309,7 +310,7 @@ class RingBufferSized
 
       if(nToPushRemain)
          {//There is space
-         int lenToCopy1 = (Size-mIn); //space available before wrapping
+         TIndex lenToCopy1 = (Size-mIn); //space available before wrapping
          if(lenToCopy1 > nToPushRemain)
             lenToCopy1 = nToPushRemain;
          memcpy(mBuffer+mIn,val,lenToCopy1*sizeof(T));
@@ -378,8 +379,8 @@ class RingBufferSized
 
    protected:
    T mBuffer[Size];
-   volatile int mIn;
-   volatile int mOut;
+   volatile TIndex mIn;
+   volatile TIndex mOut;
    };
 
 
@@ -387,7 +388,9 @@ class RingBufferSized
 
 int gADCPointsPerPacket = kPointsPerPacket;
 
-const int kTotalBufferSpaceBytes = 48000;
+//Statically allocating individual buffers larger than this causes the firmware to crash for some reason
+const int kTotalBufferSpaceBytes = kADCChannels < 2 ? 32000 : 64000; 
+
 const int kBufferPoints = kTotalBufferSpaceBytes/kBytesPerSample/kADCChannels;
 
 typedef RingBufferSized<int16_t, kBufferPoints> TRingBuf;
@@ -640,7 +643,7 @@ if(hasRx >= 0)
          break;   
          }
       case 'v':   //version info
-         Serial.write("ArduinoRT Example V0.9.0 $$$");
+         Serial.print("ArduinoRT Example V0.9.0 Channels: "+String(kADCChannels)+" $$$");
          Packet::ResetPacketCount(); //new session
 
          #ifdef ENABLE_SERIAL_DEBUGGING
@@ -677,7 +680,7 @@ if(gState == kHadFirstSample)
    }
 
 //Find the number of samples in the ringbuffer with the least samples
-int points = gSampleBuffers[0].GetCount();
+auto points = gSampleBuffers[0].GetCount();
 for(int chan(1); chan<kADCChannels;++chan)
    {
    auto &buffer = gSampleBuffers[chan];
