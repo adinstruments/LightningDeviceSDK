@@ -10,6 +10,8 @@
  *
  * BSD license, all text above must be included in any redistribution
  */
+//#define __SAMD51__
+
 #include "Adafruit_ZeroTimer.h"
 
 // mostly from asfdoc_sam0_tc_basic_use_case.html
@@ -51,7 +53,12 @@ static inline bool tc_is_syncing(Tc *const hw) {
     @param  timernum The timer we are wrapping, 3 for TC3, 4 for TC4, etc!
 */
 /**************************************************************************/
-Adafruit_ZeroTimer::Adafruit_ZeroTimer(uint8_t timernum) {
+#if defined(__SAMD51__)
+Adafruit_ZeroTimer::Adafruit_ZeroTimer(uint8_t timernum, uint8_t gclk)  : _gclk(gclk)
+#else
+Adafruit_ZeroTimer::Adafruit_ZeroTimer(uint8_t timernum) 
+#endif
+{
   _timernum = timernum;
 }
 
@@ -139,7 +146,7 @@ bool Adafruit_ZeroTimer::tc_init() {
 
 #if defined(__SAMD51__)
   GCLK->PCHCTRL[inst_gclk_id[instance]].reg =
-      GCLK_PCHCTRL_GEN_GCLK1_Val |
+      _gclk |
       (1 << GCLK_PCHCTRL_CHEN_Pos); // use clock generator 0
 #else
   /* Enable the user interface clock in the PM */
