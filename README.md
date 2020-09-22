@@ -1,5 +1,11 @@
 # LightningDeviceSDK
 
+[Get LabChart Lightning](https://go.adinstruments.com/integrationLCLtrial): Take advantage of our free 30 day trial while you are in the setup phase of your plugin.
+
+[Find out more](https://go.adinstruments.com/LCLIntegrationCWS): Benefits of integrating with LabChart Lightning and options for enhanced promotion and sales growth opportunities.
+
+[Tell us about yourself](https://go.adinstruments.com/l/21302/2020-09-17/5qnltg): if you want to, fill out our contact form and we can notify you with new resources and promotional opportunities that will help get your device in front of researchers.
+
 The LightningDeviceSDK provides functionality to write device connection plugins in Typescript for LabChart Lightning. This repo does not provide any functionality, only example files and typed interfaces. You will need LabChart Lightning with a valid license in order to run your device plugin.
 
 **\*\*The LightningDeviceSDK is currently under development and is subject to change.\*\***
