@@ -1145,17 +1145,7 @@ class NanoParser {
    write(chunk: Uint8Array) {
       // console.log('Send to nano:', chunk);
       this.inStream.write(chunk);
-      // this.pendingWrites.push(chunk);
    }
-
-   // pendingWrites: Uint8Array[] = [];
-
-   // doWrite() {
-   //    // console.log('Send to nano:', chunk);
-   //    console.log(this.pendingWrites);
-   //    this.pendingWrites.forEach(chunk => this.inStream.write(chunk));
-   //    this.pendingWrites = [];
-   // }
 
    exitCurrentMode() {
       switch (this.lastStatusMode) {
@@ -1235,9 +1225,7 @@ class NanoParser {
             if (this.proxyDevice) this.proxyDevice.onSamplingStarted();
 
             // Keep writing alive to tell the nano to keep sampling
-            setTimeout(() => {
-               this.inStream.write(NanoTxSampCmds.kAlive);
-            }, 500);
+            this.inStream.write(NanoTxSampCmds.kAlive);
 
             if (this.oldBytes == null) {
                oldBytes = newBytes;
@@ -1254,7 +1242,7 @@ class NanoParser {
 
             if (this.criticalError && this.proxyDevice) {
                // this.proxyDevice.stopSampling();
-               break;
+               return;
             }
 
             break;
@@ -1264,7 +1252,6 @@ class NanoParser {
          default:
             console.warn('Nano parser: unexpected state:', this.state);
       } //switch
-      // this.doWrite();
    } //onData
 
    processIdleData(byteArray: Buffer) {
