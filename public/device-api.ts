@@ -128,18 +128,6 @@ export interface IDeviceSetting {
    staticFlags?: DeviceSettingStaticFlags;
 
    plSettingId?: number;
-
-   /**
-    * Updates the JS setting to match the actual device's setting. This allows
-    * the UI to reflect the state of settings that were coerced in response to
-    * some other setting change. E.g. Bio Amp low/hi pass filter settings.
-    */
-   update?(): void;
-
-   /**
-    * Similar to update() except a setting's options are reloaded.
-    */
-   reloadOptions?(): void;
 }
 
 export interface IDeviceOption {
@@ -219,6 +207,8 @@ export interface IDeviceStreamApi extends HierarchyOfDeviceSettingsBase {
    userEnabled?: boolean;
    streamInDevice?: number;
 }
+
+export interface IDeviceSettingsApi extends HierarchyOfDeviceSettingsBase {}
 
 export interface IDeviceInputSettingsSys {
    range: IDeviceSetting;
@@ -534,6 +524,30 @@ export interface IDeviceManagerApi {
       onDoneCallback: (error: Error | null, result: boolean) => void,
       onDidSetOptionCallback?: (error: Error | null, result: boolean) => void
    ): void;
+
+   /**
+    * Invokes an arbitrary function somewhere within the device manager settings
+    * on the devices thread. This is the general mechanism whereby user actions done
+    * on the main (UI) thread are applied down to the device hardware.
+    *
+    * @param pathToObject path from the root devman settings to the function being
+    * called, not including the function name itself. E.g. .dataInStreams[0]
+    * @param functionName Name of the function to call
+    * @param functionArgJson e.g. { type: "HCU" }
+    *
+    * @returns a javascript object the function may have returned, otherwise null.
+    */
+   callFunction(
+      pathToObject: string,
+      functionName: string,
+      functionArgJson: string
+   ): Promise<Record<string, any> | null>;
+
+   settingsPath(
+      entity:
+         | { type: 'device'; deviceIndex: number }
+         | { type: 'stream'; deviceIndex: number; streamIndex: number }
+   ): string;
 }
 
 //The JS part of the ProxyDevice called from Quark
