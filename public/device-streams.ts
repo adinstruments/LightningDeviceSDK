@@ -32,6 +32,10 @@ export class DuplexStream implements IDuplexStream {
          this.onError = listener as ErrorListener;
       } else if (event === 'data') {
          this.onData = listener as DataListener;
+         if (!this.isRunning) {
+            //The client is now interested in receiving data. Open the HW connection.
+            this.isRunning = this.source.start();
+         }
       }
    }
 
@@ -53,6 +57,12 @@ export class DuplexStream implements IDuplexStream {
 
    destroy(error?: Error): void {
       this._destroy(error, this.onDestroy);
+   }
+
+   //destroy both the stream and the underlying HW connection
+   destroyConnection(): void {
+      this.destroy();
+      this.source.release();
    }
 
    write(
@@ -110,6 +120,13 @@ export class DuplexStream implements IDuplexStream {
       this.timeoutms = ms;
       if (this.timeoutms > 0 && this.timer === undefined)
          this.timer = setTimeout(this.onTimeout, this.timeoutms);
+   }
+
+   clearReadTimeout() {
+      if (this.timer) {
+         this.timeoutms = 0; //disable future timeouts
+         clearTimeout(this.timer);
+      }
    }
 
    _read(size: number) {

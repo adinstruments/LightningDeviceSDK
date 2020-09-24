@@ -3,7 +3,8 @@ import {
    IDeviceStreamApi,
    IDeviceManagerApi,
    IUIAreaApi,
-   IUIElementApi
+   IUIElementApi,
+   DeviceProxyId
 } from '../../public/device-api';
 import { PluginFeatureTypes } from '../../public/plugin-api';
 
@@ -28,7 +29,7 @@ class SerialWithMappedInputsUI implements IDeviceUIApi {
 
    describeStreamSettingsUI(
       settings: IDeviceStreamApi,
-      deviceIndex: number,
+      deviceId: DeviceProxyId,
       deviceManager: IDeviceManagerApi
    ): IUIAreaApi {
       // UI elements that will be shown in the signal sampling settings UI.
@@ -41,7 +42,7 @@ class SerialWithMappedInputsUI implements IDeviceUIApi {
          type: 'header',
          title: 'SerialWithMappedInputs Device',
          subtitle: `${deviceManager.deviceDisplayName(
-            deviceIndex
+            deviceId
          )}, ${settings.streamName || 'Input'}`
       });
 

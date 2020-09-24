@@ -1,6 +1,12 @@
 /**
- * Example device plugin based on the OpenBCI Cyton protocol.
- *  - Samples in Lightning using fake generated data
+ * Example device driver for an Arduino device firmware (e.g. DueLightning.ino or SAMD51Lightning.ino)
+ * that does not support round-trip or USB Frame time synchronization, with the result that Lightning
+ * will fall back to "sampling counting" to try and adjust for the crystal oscillator drift between devices.
+ *
+ * This example does implement two optional methods (on the ProxyDevice object) that can improve the
+ * accuracy of the initial inter-device timing at the start of sampling:
+ *  getStartDelayMicroSeconds()
+ *  getLocalClockTickAtSamplingStart()
  *
  * Notes:
  * - Quark is Lightning's C++ sampling engine.
@@ -38,7 +44,12 @@ import {
    SysStreamEventType,
    TDeviceConnectionType,
    BlockDataFormat,
-   OpenPhysicalDeviceDescriptor
+   OpenPhysicalDeviceDescriptor,
+   TInt64,
+   TimePoint,
+   TimePointInfo,
+   ADITimePointInfoFlags,
+   FirstSampleRemoteTime
 } from '../../public/device-api';
 
 import { Setting } from '../../public/device-settings';
@@ -49,6 +60,11 @@ import { DuplexStream } from '../../public/device-streams';
 
 import { StreamRingBufferImpl } from '../../public/stream-ring-buffer';
 
+import { Parser } from '../../public/packet-parser';
+
+//Don't fire notifications into Lightning too often!
+const kMinimumSamplingUpdatePeriodms = 50;
+
 // Imported libs set in getDeviceClass(libs) in module.exports below
 // obtained from quark-enums
 type Enum = { [key: string]: number };
@@ -57,8 +73,24 @@ const kSettingsVersion = 1;
 
 const kDataFormat = ~~BlockDataFormat.k16BitBlockDataFormat; // For now!
 
-const kSampleRates = [16000.0, 8000.0, 4000.0, 2000.0, 1000.0, 500.0, 250.0];
-const kDefaultSamplesPerSec = 250;
+//Support for compensating for a known fixed delay between asking the device
+//to start sampling and the time when the first sample is actually measured
+//by the ADC on the device.
+const kTimeFromStartToFirstSampleMicroSeconds = 0;
+
+//This needs to match the default rate in the hardware after it reboots!
+const kDefaultSamplesPerSec = 100;
+
+const kSampleRates = [
+   //   20000.0,
+   //   10000.0,
+   4000.0,
+   2000.0,
+   1000.0,
+   400.0,
+   200.0,
+   100.0
+];
 
 const kMinOutBufferLenSamples = 1024;
 
@@ -70,7 +102,7 @@ const kDefaultDecimalPlaces = 3;
 // VREF = 4.5 V
 // Currently we are only keeping the high 16 bits of the 24 bits (k16BitBlockDataFormat)
 
-const posFullScaleVAtGain1x = 4.5;
+const posFullScaleVAtGain1x = 3.3;
 
 const kUnitsForGain1x = new UnitsInfoImpl(
    'V', //unit name
@@ -138,12 +170,7 @@ export function gainCharFromPosFullScale(posFullScale: number) {
    return '0';
 }
 
-const kStreamNames = [
-   'Serial Input 1',
-   'Serial Input 2',
-   'Serial Input 3',
-   'Serial Input 4'
-];
+const kStreamNames = ['ADC Input 1', 'ADC Input 2'];
 
 const kEnableLogging = false;
 
@@ -159,27 +186,26 @@ export function resetgSampleCountForTesting() {
 export class PhysicalDevice implements OpenPhysicalDevice {
    deviceName: string;
    serialNumber: string;
-   deviceConnection: DuplexDeviceConnection;
-   parser: Parser;
+   deviceStream: DuplexStream;
+   parser: ParserWithSettings;
    numberOfChannels: number;
 
    constructor(
       private deviceClass: DeviceClass,
-      deviceConnection: DuplexDeviceConnection
+      deviceStream: DuplexStream,
+      friendlyName: string,
+      versionInfo: string
    ) {
-      this.deviceConnection = deviceConnection;
       this.numberOfChannels = kStreamNames.length;
-      this.serialNumber = `ADI-SerialSettings-123`;
+      this.serialNumber = `ArduinoRT-123`; //TODO: get this from versionInfo (which should be JSON)
 
-      const inStream = new DuplexStream(this.deviceConnection);
-      this.parser = new Parser(inStream);
-      this.deviceName = deviceClass.getDeviceClassName() + ' Device';
+      this.parser = new ParserWithSettings(deviceStream, this.numberOfChannels);
+      this.deviceName = deviceClass.getDeviceClassName() + ': ' + friendlyName;
    }
 
    release() {
-      if (this.deviceConnection) {
-         this.deviceConnection.onStreamDestroy();
-         this.deviceConnection.release();
+      if (this.deviceStream) {
+         this.deviceStream.destroyConnection();
       }
    }
 
@@ -212,7 +238,7 @@ export class PhysicalDevice implements OpenPhysicalDevice {
       return {
          deviceType: this.deviceClass.getDeviceClassName(),
          numInputs: this.getNumberOfAnalogInputs(),
-         deviceId: this.serialNumber || this.deviceConnection.devicePath
+         deviceId: this.serialNumber || this.deviceStream.source.devicePath
       };
    }
 }
@@ -316,56 +342,19 @@ enum ParserState {
    kError
 }
 
+const kPacketStartByte = 0x50; //'P'
+
 /**
  * An object that handles parsing of data returned from the example device.
  * Note that this is device-specific and will need to be changed for any other device.
  */
-class Parser {
-   static kPacketSizeBytes = 33;
 
-   state: ParserState = ParserState.kUnknown;
-   lastError = '';
-   bytesInPacket: number;
-   packet: Buffer;
-   expectedSampleCount: number; // is one byte (0 - 255)
+class ParserWithSettings extends Parser {
    samplesPerSec: number;
 
-   proxyDevice: ProxyDevice | null = null;
-
-   incrementExpectedSampleCount() {
-      this.expectedSampleCount++;
-      this.expectedSampleCount &= 255;
-      ++gSampleCountForTesting;
-   }
-
-   constructor(public inStream: IDuplexStream) {
+   constructor(public inStream: IDuplexStream, nADCChannels: number) {
+      super(inStream, nADCChannels);
       this.samplesPerSec = kDefaultSamplesPerSec;
-      this.bytesInPacket = 0;
-      this.packet = Buffer.alloc(Parser.kPacketSizeBytes);
-      this.expectedSampleCount = 0;
-
-      //node streams default to 'utf8' encoding, which most devices won't understand.
-      //With 'utf8' encoding, non-ascii chars, such as:
-      //devStream.write('\xD4\x02\x02\xD4\x76\x0A\x62');
-      //could be expanded into multiple bytes, so we use 'binary' instead.
-      this.inStream.setDefaultEncoding('binary');
-
-      this.inStream.on('error', this.onError);
-      // do we want to do this here? (switches stream into flowing mode).
-      this.inStream.on('data', this.onData);
-   }
-
-   isSampling(): boolean {
-      return ParserState.kIdle < this.state && this.state < ParserState.kError;
-   }
-
-   onError = (err: Error) => {
-      this.lastError = err.message;
-      console.warn(err);
-   };
-
-   setProxyDevice(proxyDevice: ProxyDevice) {
-      this.proxyDevice = proxyDevice;
    }
 
    setSamplesPerSec(samplesPerSec: number): number {
@@ -375,8 +364,8 @@ class Parser {
       }
       const index = kSampleRates.indexOf(samplesPerSec);
       if (index >= 0) {
-         const char = '0123456'.charAt(index);
-         this.inStream.write('~' + char);
+         const char = '0123456789'.charAt(index);
+         this.inStream.write('~' + char + '\n');
          this.samplesPerSec = samplesPerSec;
       }
       return samplesPerSec;
@@ -388,215 +377,11 @@ class Parser {
          const inputChar = String.fromCharCode(48 + input);
          //See https://docs.openbci.com/docs/02Cyton/CytonSDK#channel-setting-commands
          const commandStr =
-            'x' + inputChar + '0' + gainChar + '0' + '1' + '1' + '0' + 'X';
-         this.inStream.write(commandStr);
+            'x' + inputChar + '0' + gainChar + '0' + '1' + '1' + '0' + 'X\n';
+         //this.inStream.write(commandStr);
       }
    }
-
-   startSampling(): boolean {
-      if (!this.inStream || !this.proxyDevice) {
-         return false;
-      }
-
-      this.inStream.write('b'); // OpenBCI begin sampling command
-      this.state = ParserState.kStartingSampling;
-      this.expectedSampleCount = 0;
-      //this.bytesInPacket = 0;
-      return true;
-   }
-
-   stopSampling(): boolean {
-      this.state = ParserState.kIdle;
-      if (!this.inStream) return false; // Can't sample if no hardware connection
-
-      this.inStream.write('s'); // OpenBCI begin sampling command
-      if (this.proxyDevice) this.proxyDevice.onSamplingStopped(''); // Normal user stop
-      return true;
-   }
-
-   processPacket(data: Buffer): boolean {
-      const kStartOfDataIndex = 2;
-
-      let lostSamples = 0;
-
-      if (data[0] != 0xa0 || (data[32] & 0xf0) != 0xc0) {
-         this.lastError = 'Cyton packet out of sync';
-         console.warn(this.lastError);
-         return false; //not in synch
-      } else if (data[1] !== this.expectedSampleCount) {
-         lostSamples = (data[1] - this.expectedSampleCount) & 255;
-         console.warn('Cyton lost samples:', lostSamples);
-      }
-
-      if (!this.proxyDevice) {
-         this.lastError =
-            'Cyton parser processPacket() called with no proxyDevice';
-         console.warn(this.lastError);
-         return true;
-      }
-
-      const outStreamBuffers = this.proxyDevice.outStreamBuffers;
-      const nStreams = outStreamBuffers.length;
-
-      if (lostSamples) {
-         for (let i = 0; i < lostSamples; ++i) {
-            for (let streamIndex = 0; streamIndex < nStreams; ++streamIndex) {
-               // Don't produce data for disabled streams.
-               if (
-                  !this.proxyDevice.settings.dataInStreams[streamIndex].enabled
-                     .value
-               )
-                  continue;
-
-               outStreamBuffers[streamIndex].writeInt(0x8000); //Insert 'out of range' values
-            }
-         }
-         this.expectedSampleCount = data[1]; //resynch
-      }
-
-      let byteIndex = kStartOfDataIndex;
-      for (
-         let streamIndex = 0;
-         streamIndex < nStreams;
-         ++streamIndex, byteIndex += 3
-      ) {
-         // Don't produce data for disabled streams.
-         if (
-            !this.proxyDevice.settings.dataInStreams[streamIndex].enabled.value
-         )
-            continue;
-
-         // The OpenBCI Cyton format is big endian 24 bit.
-         // See http://docs.openbci.com/Hardware/03-Cyton_Data_Format
-         const value =
-            (data[byteIndex] << 16) +
-            (data[byteIndex + 1] << 8) +
-            data[byteIndex + 2];
-
-         const int16Val = value >> 8; // For now just taking the high 16 bits
-         outStreamBuffers[streamIndex].writeInt(int16Val);
-      }
-      this.incrementExpectedSampleCount();
-      return true;
-   }
-
-   onData = (newBytes: Buffer) => {
-      const nBytes = newBytes.length;
-      if (!nBytes) return;
-
-      let inOffset = 0;
-
-      switch (this.state) {
-         case ParserState.kIdle:
-            return;
-
-         case ParserState.kStartingSampling:
-            this.state = ParserState.kLookingForPacket;
-            this.expectedSampleCount = 0;
-            if (this.proxyDevice) this.proxyDevice.onSamplingStarted();
-
-         case ParserState.kLookingForPacket:
-         case ParserState.kSampling:
-            while (this.bytesInPacket) {
-               // Handle partial packet left over from last onData()
-               // Copy some new bytes into stored packet to try to get a complete packet
-               const nToCopy = Math.min(
-                  Parser.kPacketSizeBytes - this.bytesInPacket,
-                  nBytes
-               );
-               newBytes.copy(
-                  this.packet,
-                  this.bytesInPacket,
-                  inOffset,
-                  inOffset + nToCopy
-               );
-               this.bytesInPacket += nToCopy;
-               inOffset += nToCopy;
-               if (this.bytesInPacket >= Parser.kPacketSizeBytes) {
-                  //We have a full packet
-                  if (
-                     this.packet[0] === 0xa0 &&
-                     this.processPacket(this.packet)
-                  ) {
-                     this.bytesInPacket = 0; //successfully processed all the bytes stored in this.packet
-                     this.state = ParserState.kSampling;
-                  } else {
-                     //Search for packet start char, in the stored packet
-                     this.state = ParserState.kLookingForPacket;
-                     let startPos = this.packet[0] === 0xa0 ? 1 : 0; //Skip first byte if already checked
-                     for (; startPos < this.bytesInPacket; ++startPos) {
-                        if (this.packet[startPos] === 0xa0) {
-                           break; //found a potential packet start byte
-                        }
-                     }
-                     if (startPos < this.bytesInPacket) {
-                        //retain some of the stored bytes, shifting them to start of packet
-                        this.packet.copy(
-                           this.packet,
-                           0,
-                           startPos,
-                           this.bytesInPacket
-                        );
-                        this.bytesInPacket -= startPos;
-                        this.state = ParserState.kSampling;
-                     } else {
-                        this.bytesInPacket = 0; //scrap the saved bytes
-                     }
-                  }
-               }
-            } //while (this.bytesInPacket)
-
-            //Handle newBytes
-            while (nBytes - inOffset >= Parser.kPacketSizeBytes) {
-               if (this.state === ParserState.kLookingForPacket) {
-                  //Search for packet start char in the newBytes
-                  for (; inOffset < nBytes; ++inOffset) {
-                     if (newBytes[inOffset] === 0xa0) {
-                        this.state = ParserState.kSampling;
-                        break; //found possible start of packet
-                     }
-                  }
-               }
-
-               if (this.state === ParserState.kLookingForPacket) break; //done
-
-               if (
-                  !this.processPacket(
-                     newBytes.slice(
-                        inOffset,
-                        (inOffset += Parser.kPacketSizeBytes)
-                     )
-                  )
-               ) {
-                  inOffset -= Parser.kPacketSizeBytes - 1; //Start searching from the 2nd byte in last packet
-                  this.state = ParserState.kLookingForPacket;
-               }
-            } //while(nBytes - inOffset >= CytonParser.kPacketSizeBytes)
-
-            break;
-         case ParserState.kError:
-            console.warn('Cyton parser: error state');
-         default:
-            console.warn('Cyton parser: unexpected state:', this.state);
-      } //switch
-
-      if (inOffset < nBytes) {
-         //store partial packet
-         if (nBytes - inOffset > Parser.kPacketSizeBytes)
-            console.warn('Trying to store too many left over bytes in packet');
-         if (this.bytesInPacket)
-            console.warn('Writing over left over bytes in packet');
-         this.bytesInPacket = newBytes.copy(
-            this.packet,
-            this.bytesInPacket,
-            inOffset,
-            nBytes
-         );
-      }
-
-      if (this.proxyDevice) this.proxyDevice.onSamplingUpdate();
-   }; //onData
-} //CytonParser
+}
 
 const kDefaultEnabled: IDeviceSetting = {
    settingName: 'Enabled',
@@ -645,10 +430,6 @@ const kDefaultRate: IDeviceSetting = {
    settingName: 'Rate',
    value: kDefaultSamplesPerSec,
    options: [
-      {
-         value: kDefaultSamplesPerSec,
-         display: kDefaultSamplesPerSec.toString() + ' Hz'
-      },
       {
          value: kSampleRates[5],
          display: kSampleRates[5].toString() + ' Hz'
@@ -721,7 +502,7 @@ class ProxyDevice implements IProxyDevice {
    proxyDeviceSys: ProxyDeviceSys | null;
 
    //Only non-null if this proxy is the one with a lock on the PhysicalDevice
-   parser: Parser | null;
+   parser: ParserWithSettings | null;
 
    /**
     * @returns if the device is sampling
@@ -1016,6 +797,8 @@ class ProxyDevice implements IProxyDevice {
 
       if (this.physicalDevice) {
          this.parser = this.physicalDevice.parser;
+         this.parser.setProxyDevice(this);
+
          if (kEnableLogging)
             console.log('Sending complete settings to hardware device');
          //Actually send the settings to the hardware
@@ -1030,7 +813,10 @@ class ProxyDevice implements IProxyDevice {
     * Called from Quark to prevent multiple proxies trying to communicate with the device at the same time.
     */
    disconnectFromPhysicalDevice(): void {
-      this.parser = null; // Drop our reference to the parser in the PhysicalDevice
+      if (this.parser) {
+         this.parser.setProxyDevice(null);
+         this.parser = null; // Drop our reference to the parser in the PhysicalDevice
+      }
       if (kEnableLogging) console.log('disconnectFromPhysicalDevice()');
    }
 
@@ -1074,9 +860,6 @@ class ProxyDevice implements IProxyDevice {
          }
          ++index;
       }
-
-      //Set this proxy device as the sampling proxy
-      this.parser.setProxyDevice(this);
 
       return true;
    }
@@ -1140,7 +923,23 @@ class ProxyDevice implements IProxyDevice {
          this.setOutBufferOutputIndices(inOutIndices);
       }
    }
-}
+
+   //Optional support for compensating for a known fixed delay between asking the device
+   //to start sampling and the time when the first sample is actually measured
+   //by the ADC on the device.
+   getStartDelayMicroSeconds(): number {
+      return kTimeFromStartToFirstSampleMicroSeconds;
+   }
+
+   //Optional support for providing a more accurate estimate of the time (using the local PC's steady clock)
+   //at which the device actually started sampling
+   getLocalClockTickAtSamplingStart(): TInt64 | undefined {
+      if (this.parser) {
+         return this.parser.localClockAtSamplingStart;
+      }
+      return undefined;
+   }
+} //ProxyDevice
 
 /**
  * The device class is the set of types of device that can share the same settings so that
@@ -1170,7 +969,7 @@ export class DeviceClass implements IDeviceClass {
     * @returns the name of the class of devices
     */
    getDeviceClassName(): string {
-      return 'SerialSettings';
+      return 'ArduinoNoSync';
    }
 
    /**
@@ -1178,7 +977,7 @@ export class DeviceClass implements IDeviceClass {
     */
    getClassId() {
       // UUID generated using https://www.uuidgenerator.net/version1
-      return 'e60ce0c8-b107-11ea-b3de-0242ac130004';
+      return '917adfc8-d6bf-11ea-87d0-0242ac130003';
    }
 
    /**
@@ -1186,20 +985,7 @@ export class DeviceClass implements IDeviceClass {
     * ie. USB, serial etc.
     */
    getDeviceConnectionType(): TDeviceConnectionType {
-      return TDeviceConnectionType.kDevConTypeMockSerialPortForTesting;
-   }
-
-   static testDeviceIndexFromConnectionPath(devicePath: string): number {
-      return parseInt(
-         devicePath
-            .substring('TestDevicePath_'.length)
-            .replace(/(^\d+)(.+$)/i, '$1'),
-         10
-      );
-   }
-
-   devicePathIsOneOfOurs(devicePath: string): boolean {
-      return devicePath.startsWith('TestDevicePath_0');
+      return TDeviceConnectionType.kDevConTypeSerialPort;
    }
 
    /**
@@ -1215,13 +1001,35 @@ export class DeviceClass implements IDeviceClass {
       deviceConnection: DuplexDeviceConnection,
       callback: (error: Error | null, device: OpenPhysicalDevice | null) => void
    ): void {
-      if (!this.devicePathIsOneOfOurs(deviceConnection.devicePath)) {
+      const vid = deviceConnection.vendorId.toUpperCase();
+      const pid = deviceConnection.productId.toUpperCase();
+
+      /** Uncomment following 2 lines to disable this device class so that e.g. the ArduinoRoundTrip script finds the device instead */
+      //callback(null, null); // Did not find one of our devices on this connection
+      //return;
+
+      if (
+         !(vid === '2341' && pid === '003E') && //Due Native port 003E
+         //!(vid === '2341' && pid === '003D') && //Due Programming port 003D (not recommended)!
+
+         /** N.B. The following SAMD devices do not have stable timing unless the Arduino firmware (sketch)
+          *  is built using the ADInstruments Arduino core!
+          */
+         !(vid === '239A' && pid === '801B') && //ADAFruit Feather M0 Express
+         !(vid === '239A' && pid === '8022') && //ADAFruit Feather M4
+         !(vid === '1B4F' && pid === 'F016') //Sparkfun Thing Plus SAMD51
+
+         // && !(deviceConnection.manufacturer === 'Arduino LLC (www.arduino.cc)')
+      ) {
          callback(null, null); // Did not find one of our devices on this connection
          return;
       }
 
-      const kTimeoutms = /*this.loadTestDevice ? 50 : */ 10000; // Time for device to reboot and respond
+      const kArduinoRebootTimems = 2000;
+      const kTimeoutms = 2000; // Time for device to  respond
       const devStream = new DuplexStream(deviceConnection);
+
+      const friendlyName = deviceConnection.friendlyName;
 
       //node streams default to 'utf8' encoding, which most devices won't understand.
       //With 'utf8' encoding, non-ascii chars, such as:
@@ -1236,7 +1044,19 @@ export class DeviceClass implements IDeviceClass {
          callback(err, null);
       });
 
+      const deviceClass = this;
       let resultStr = '';
+
+      // Give up if device is not detected within the timeout period
+      const deviceVersionTimeout = global.setTimeout(() => {
+         devStream.destroyConnection(); // stop 'data' and 'error' callbacks
+         const err = new Error(
+            `Timed out: device ${friendlyName} did not respond to version request.`
+         );
+         console.warn(err);
+         callback(err, null);
+      }, kArduinoRebootTimems + kTimeoutms);
+
       // connect data handler
       devStream.on('data', (newBytes: Buffer) => {
          const newStr = newBytes.toString();
@@ -1244,24 +1064,36 @@ export class DeviceClass implements IDeviceClass {
          // See if we got '$$$'
          const endPos = resultStr.indexOf('$$$');
 
-         const testConnectionPrefixPos = resultStr.indexOf('{{TestDevicePath_');
+         if (endPos !== -1) {
+            const startPos = resultStr.indexOf('ArduinoRT');
+            if (startPos >= 0) {
+               // We found an ArduinoRT device
+               clearTimeout(deviceVersionTimeout);
 
-         if (endPos !== -1 && testConnectionPrefixPos === 0) {
-            // We found a test device
-            devStream.destroy(); // stop 'data' and 'error' callbacks
-
-            const physicalDevice = new PhysicalDevice(this, deviceConnection);
-
-            callback(null, physicalDevice);
+               const versionInfo = resultStr.slice(startPos, endPos);
+               const physicalDevice = new PhysicalDevice(
+                  deviceClass,
+                  devStream,
+                  friendlyName,
+                  versionInfo
+               );
+               callback(null, physicalDevice);
+            }
          }
       });
 
-      // Give up if device is not detected within the timeout period
-      devStream.setReadTimeout(kTimeoutms);
-      deviceConnection.setOption({ baud_rate: 38400 });
+      deviceConnection.setOption({ baud_rate: 115200 });
 
-      // Tell the device to reboot and emit its version string.
-      devStream.write('v');
+      devStream.write('s\n'); //Stop it incase it is already sampling
+
+      //Opening the serial port may cause the Arduino to reboot.
+      //Wait for it to be running again before sending the v command.
+      global.setTimeout(() => {
+         // Tell the device to emit its version string.
+         //devStream.setReadTimeout(kTimeoutms);
+         devStream.write('v\n');
+      }, kArduinoRebootTimems);
+
       return;
    }
 

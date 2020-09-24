@@ -57,7 +57,7 @@ Physical devices are only destroyed once the application closes.
 
 ### Proxy device (`device-api.ts : IProxyDevice`)
 
-An object that is created for each recording to represent the PhysicalDevice in that recording. Manages the device settings and access to sampling for that recording.
+An object that is created for each recording to represent the PhysicalDevice in that recording. Manages the device settings and access to sampling for that recording. This ensures, for instance, that the physical device always uses the settings from the correct recording when sampling.
 
 #### Creation
 
