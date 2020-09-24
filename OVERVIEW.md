@@ -109,6 +109,6 @@ LabChart Lightning will then ensure settings changes are persisted across runs o
 
 Interface definitions can be found inside the `public` folder.
 
-These interfaces contain type annotations (in Typescript) and are usable in Typescript files. The import path must be relatively the same is in the examples as it is copied directly in-order to compile. E.g. Imports must always be from the path `../../public/device-api`
+These interfaces contain type annotations (in Typescript) and are usable in Typescript files. The import path must be relatively the same is in the examples as it is copied directly in-order to compile. E.g. Imports must always be from the path `../../../public/device-api`
 
 The baud rate is currently set to 115200 for all devices.
