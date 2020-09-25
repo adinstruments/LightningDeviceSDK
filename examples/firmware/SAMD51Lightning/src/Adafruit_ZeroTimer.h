@@ -110,7 +110,11 @@ enum tc_callback {
 /**************************************************************************/
 class Adafruit_ZeroTimer {
 public:
+#if defined(__SAMD51__)
+  Adafruit_ZeroTimer(uint8_t tn, uint8_t gclk = GCLK_PCHCTRL_GEN_GCLK1_Val);
+#else
   Adafruit_ZeroTimer(uint8_t tn);
+#endif
 
   boolean PWMout(boolean pwmout, uint8_t channum, uint8_t pin);
   void setPeriodMatch(uint32_t period, uint32_t match, uint8_t channum = 1);
@@ -128,6 +132,7 @@ public:
 
 protected:
   uint8_t _timernum; ///< Which TC this is, 3 for TC3, 4 for TC4, etc
+  uint8_t _gclk;   ///source generic clock
 
   Tc *_hw; ///< Pointer to the timer we're wrappering
 
