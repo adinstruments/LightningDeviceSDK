@@ -57,7 +57,7 @@ Physical devices are only destroyed once the application closes.
 
 ### Proxy device (`device-api.ts : IProxyDevice`)
 
-An object that is created for each recording to represent the PhysicalDevice in that recording. Manages the device settings and access to sampling for that recording.
+An object that is created for each recording to represent the PhysicalDevice in that recording. Manages the device settings and access to sampling for that recording. This ensures, for instance, that the physical device always uses the settings from the correct recording when sampling.
 
 #### Creation
 
@@ -66,7 +66,7 @@ A **Proxy device** instance is created when both:
 1. There is an active recording open in LabChart Lightning.
 2. A working physical device is present.
 
-Proxy devices are destroyed each time a recording the application closes.
+Proxy devices are destroyed each time a recording or the application closes.
 
 ## Example Scenarios
 
@@ -76,7 +76,7 @@ To better understand the role of the various objects in the plugin implementatio
 
 1. On launch, LabChart Lightning loads all plugins, calling `getDeviceClasses()` which returns an instance of the plugin DeviceClass implementation. e.g. `[return new DeviceClass()];`
 2. Shortly after, Lightning initiates a device scan process. For each serial device returned by the operating system, `checkDeviceIsPresent(deviceConnection, callback)` is called on the DeviceClass implementation. If the vendor, product and manufacturer information for the connection match the expected values for the target device a new Physical device object is instantiated and returned to LabChart Lightning via callback.
-3. If a device was found, a new recording will be added to the project and a Device proxy for the found physical device will be created. The detected device will be shown in the bottom right corner of the application. Clicking on the device label, shows a summary popup as in the image below:
+3. If a device was found, a new recording will be added to the project and a Device proxy for the found physical device will be created. Clicking on the Devices button at the top of the Chart View shows the connected device and a summary in a popup, as in the image below:
 
 ![Error loading plugin](images/device-found.gif)
 

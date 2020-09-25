@@ -1,5 +1,12 @@
 # LightningDeviceSDK Change Log
 
+### v0.1.6 - 8/11/2020
+- Added two example Arduino device scripts: ArduinoRoundTrip and ArduinoNoSynch
+- Added corresponding Arduino firmware sketches for the Due, SAMD51 and SAMD21 devices, implementing timer-driven ADC sampling 
+- An example packet parser handling the data packets sent from the example device firmware to Lightning
+- Arduino examples demonstrate how to implement round-trip time synchronization to improve inter-device timing accuracy
+- fixed bugs in the packet parser for the OpenBCI.ts, 
+
 ### v0.1.5 - 6/24/2020
 - Added support for custom device UI
 - Added two new example device implementations: SerialSettings and SerialWithMappedInputs

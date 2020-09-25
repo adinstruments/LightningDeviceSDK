@@ -1,5 +1,51 @@
-import { Writable } from 'stream';
+export const kInt32sPerTimePoint = 2; //Each TimePoint is a little endian 64 bit integer
 
+export type TInt64 = Int32Array; //Of length 2 (Little endian)
+
+export class TimePoint {
+   localPreTimeTick: TInt64;
+   remoteTimeTick: TInt64;
+   localPostTimeTick: TInt64;
+
+   constructor() {
+      this.localPreTimeTick = new Int32Array(2);
+      this.remoteTimeTick = new Int32Array(2);
+      this.localPostTimeTick = new Int32Array(2);
+   }
+}
+
+export class FirstSampleRemoteTime {
+   remoteFirstSampleTick: TInt64;
+
+   constructor() {
+      this.remoteFirstSampleTick = new Int32Array(2);
+   }
+}
+
+export class Rational {
+   //numerator and denominator should be integers
+   constructor(public numerator: number, public denominator: number) {}
+}
+
+//Shared between C++ and Typescript: see public/device-api.ts and libs/quark-sys/libs/QuarkCOMInterfaces/IADIDeviceTimeAsynch.h
+export enum ADITimePointInfoFlags {
+   kTPInfoDefault = 0 | 0
+}
+
+export class TimePointInfo {
+   constructor(
+      //The rate of the clock/timer in the device.
+      //N.B. Currently only integer values are supported, i.e. denominator must equal 1.
+      public remoteTicksPerSec: Rational,
+
+      //Size of the remote time tick returned from the device in bits. E.g. 32 means the remote tick count
+      //is a value wrapping from 2^32-1 to 0 (or equivalently +2^31-1 to -2^31.
+      //This is used by Lightning to "uwrap" the reported remote device time into a 64 bit number.
+      public remoteTicksValidBits: number,
+
+      public flags: ADITimePointInfoFlags = ADITimePointInfoFlags.kTPInfoDefault
+   ) {}
+}
 export * from './device-ui-api';
 
 //see quark-sys\libs\QuarkCOMInterfaces\IOpenDeviceConnection.h for
@@ -33,7 +79,7 @@ export enum TStopBits {
    two = 2 | 0
 }
 
-//See boost ASIO: /boost/asio/serial_port_base.hpp
+//See e.g. boost ASIO: /boost/asio/serial_port_base.hpp
 export interface SerialPortOptions {
    baud_rate?: number;
    flow_control?: TFlowControl; //default: none
@@ -51,12 +97,17 @@ export interface DeviceConnection extends DeviceConnectionInfo {
    onStreamDestroy(): void; //reset the callback
    release(): void;
    setOption(options: SerialPortOptions): void;
+   getLocalSteadyClockTickNow(timeTick: TInt64): void;
 }
 
 export interface DuplexDeviceConnection extends DeviceConnection {
    //callBack returns with error === null if write succeeded
    //setWriteHandler( callBack:(error: Error | null) => void): void;
    write(buffer: Buffer, callback: (error?: Error) => void): void;
+}
+
+export interface IStreamBuffer {
+   writeInt(value: number): boolean;
 }
 
 export interface StreamRingBuffer {
@@ -81,6 +132,16 @@ export interface StreamRingBuffer {
 
 // Allows it to be inherited from.
 export type HierarchyOfDeviceSettingsBase = HierarchyOfDeviceSettings | any;
+
+export type DeviceProxyId = {
+   className: string;
+   classGuid: string;
+   indexInClass: number;
+};
+
+export function proxyIdsAreEqual(a: DeviceProxyId, b: DeviceProxyId): boolean {
+   return a.classGuid === b.classGuid && a.indexInClass === b.indexInClass;
+}
 
 export interface IDeviceProxySettingsSys extends HierarchyOfDeviceSettingsBase {
    version: number;
@@ -128,18 +189,6 @@ export interface IDeviceSetting {
    staticFlags?: DeviceSettingStaticFlags;
 
    plSettingId?: number;
-
-   /**
-    * Updates the JS setting to match the actual device's setting. This allows
-    * the UI to reflect the state of settings that were coerced in response to
-    * some other setting change. E.g. Bio Amp low/hi pass filter settings.
-    */
-   update?(): void;
-
-   /**
-    * Similar to update() except a setting's options are reloaded.
-    */
-   reloadOptions?(): void;
 }
 
 export interface IDeviceOption {
@@ -195,7 +244,7 @@ export interface OpenPhysicalDeviceDescriptor {
 }
 
 export interface OpenPhysicalDevice {
-   deviceConnection: DuplexDeviceConnection;
+   deviceConnection?: DuplexDeviceConnection;
    getDeviceName(): string;
    getNumberOfAnalogInputs(): number;
    getNumberOfAnalogStreams(): number;
@@ -205,8 +254,12 @@ export interface OpenPhysicalDevice {
 
 export interface IDeviceStreamApi extends HierarchyOfDeviceSettingsBase {
    inputSettings: IDeviceInputSettingsSys;
-   enabled: IDeviceSetting;
+
+   enabled: IDeviceSetting; //N.B. enabled.value is most likely what you need!
+
    samplesPerSec: IDeviceSetting;
+
+   //isEnabled: boolean; //AKA this.enabled.value
 
    /**
     * Optional setting for the index of physical input produced by the device to
@@ -218,7 +271,16 @@ export interface IDeviceStreamApi extends HierarchyOfDeviceSettingsBase {
    // The following are currently supplied by PowerLabs.
    userEnabled?: boolean;
    streamInDevice?: number;
+
+   //Indicates whether or not Quark expects this stream to sample (mainly for testing)
+   quarkStreamEnabled?: boolean;
 }
+
+export interface IDeviceStreamApiImpl extends IDeviceStreamApi {
+   isEnabled: boolean; //getter returning this.enabled.value
+}
+
+export interface IDeviceSettingsApi extends HierarchyOfDeviceSettingsBase {}
 
 export interface IDeviceInputSettingsSys {
    range: IDeviceSetting;
@@ -375,6 +437,11 @@ export interface ProxyDeviceSys {
    //onSamplingStopped(errorMsg: string /*, errorCode: SamplingError*/): void;
 
    onDeviceEvent(event: DeviceEvent, message?: string): void;
+
+   onRemoteTimeEvent(
+      error: Error | null,
+      timePoint: TimePoint | FirstSampleRemoteTime | null
+   ): void;
 }
 
 export interface IDeviceStreamConfiguration {
@@ -483,14 +550,14 @@ export interface IDeviceManagerApi {
     *
     * @param deviceIndex The index of the device.
     */
-   deviceDisplayName(deviceIndex: number): string | undefined;
+   deviceDisplayName(deviceId: DeviceProxyId): string | undefined;
 
    /**
     * @returns the internal/model name of a device being used in a recording.
     *
     * @param deviceIndex The index of the device.
     */
-   deviceInternalName(deviceIndex: number): string | undefined;
+   deviceInternalName(deviceId: DeviceProxyId): string | undefined;
 
    /**
     * PowerLab only.
@@ -534,6 +601,42 @@ export interface IDeviceManagerApi {
       onDoneCallback: (error: Error | null, result: boolean) => void,
       onDidSetOptionCallback?: (error: Error | null, result: boolean) => void
    ): void;
+
+   /**
+    * Invokes an arbitrary function somewhere within the device manager settings
+    * on the devices thread. This is the general mechanism whereby user actions done
+    * on the main (UI) thread are applied down to the device hardware.
+    *
+    * @param pathToObject path from the root devman settings to the function being
+    * called, not including the function name itself. E.g. .dataInStreams[0]
+    * @param functionName Name of the function to call
+    * @param functionArgJson e.g. { type: "HCU" }
+    *
+    * @returns a javascript object the function may have returned, otherwise null.
+    */
+   callFunction(
+      pathToObject: string,
+      functionName: string,
+      functionArgJson: string
+   ): Promise<Record<string, any> | null>;
+
+   settingsPath(
+      entity:
+         | { type: 'device'; deviceId: DeviceProxyId }
+         | { type: 'stream'; deviceId: DeviceProxyId; streamIndex: number }
+   ): string;
+}
+
+export interface IDataSink {
+   outStreamBuffers: IStreamBuffer[];
+
+   onSamplingStarted(): void;
+   onSamplingUpdate(): void;
+   onSamplingStopped(errorMsg: string): void;
+   onRemoteTimeEvent?(
+      error: Error | null,
+      timePoint: TimePoint | FirstSampleRemoteTime | null
+   ): void;
 }
 
 //The JS part of the ProxyDevice called from Quark
@@ -570,6 +673,15 @@ export interface IProxyDevice {
 
    //Release buffers
    cleanupAfterSampling(): boolean;
+
+   //Option support for compensating for a known fixed delay between asking the device
+   //to start sampling and the time when the first sample is actually measured
+   //by the ADC on the device.
+   getStartDelayMicroSeconds?(): number;
+
+   //Option support for providing a more accurate estimate of the time (using the local PC's steady clock)
+   //at which the device actually started sampling
+   getLocalClockTickAtSamplingStart?(): TInt64 | undefined;
 }
 
 export enum TestDeviceFakeConnectionIndices {
