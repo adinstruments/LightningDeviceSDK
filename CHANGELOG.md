@@ -1,5 +1,8 @@
 # LightningDeviceSDK Change Log
 
+### v0.1.7 - 25/09/2020
+- Change plugin naming and location requirements. Plugins must be contained within folders inside either `Devices` or `Calculations`. The plugin entry point must be the same name as the folder. Eg. `Devices/SerialSettings/SerialSettings.ts`.
+
 ### v0.1.6 - 8/11/2020
 - Added two example Arduino device scripts: ArduinoRoundTrip and ArduinoNoSynch
 - Added corresponding Arduino firmware sketches for the Due, SAMD51 and SAMD21 devices, implementing timer-driven ADC sampling 
