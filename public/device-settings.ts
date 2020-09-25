@@ -20,9 +20,35 @@ export class Setting implements IDeviceSetting {
       this.value = other.value;
    }
 
+   /**
+    * Applies current setting value down to the hardware by invoking invoking
+    * any onValueSet() callback.
+    *
+    * To be called once when the physical device is first connected to the
+    * recording's proxy.
+    */
+   sendToHardware(): void {
+      this.onValueSet(this, this.value);
+   }
+
+   /**
+    * Access the current value as a number. Throws if setting holds a string or
+    * boolean value so should only be used when the setting is guaranteed to
+    * hold a number.
+    */
+   get asNumber(): number {
+      if (typeof this.value !== 'number') {
+         throw Error(
+            `Attempting to access setting '${this.settingName}' value as a number but it isn't one. Current value is: ${this.value}`
+         );
+      }
+
+      return this.value as number;
+   }
+
    constructor(
       rawSetting: IDeviceSetting,
-      onValueSet: (
+      private onValueSet: (
          setting: IDeviceSetting,
          newValue: DeviceValueType
       ) => DeviceValueType,
