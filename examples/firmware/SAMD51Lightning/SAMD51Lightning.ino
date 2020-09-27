@@ -2,7 +2,7 @@
 
 #define PHASE_LOCK_TO_USB_SOF 1
 //#define TIMER_OUTPUT_FOR_TEST 1
-//#define OUTPUT_USB_SOF_PLL_SIGNALS 1
+#define OUTPUT_USB_SOF_PLL_SIGNALS 1
 //#define ENABLE_DCO_TEST_COMMANDS 1
 
 
@@ -62,7 +62,7 @@ const int kADCStartChan = 2; //A1
 #ifdef TIMING_CHECK
 const int kADCChannels = 1;//2;
 #else
-const int kADCChannels = 2;
+const int kADCChannels = 4;
 #endif
 
 const int kADCEndChan = kADCStartChan + kADCChannels;
@@ -526,19 +526,20 @@ syncADC0_INPUTCTRL();
 int chan = ADC0->INPUTCTRL.bit.MUXPOS;
 
 #ifdef OUTPUT_USB_SOF_PLL_SIGNALS
-if(chan - kADCStartChan == 0)
+if(chan - kADCStartChan == 1)
    {
    //val = gLastBit;
    //gLastBit = 1-gLastBit;
    val = gPrevFrameTick;
    if(val >= kHighSpeedTimerTicksPerUSBFrame/2)
       val -= kHighSpeedTimerTicksPerUSBFrame;
+   val += 2048;
    }
-else if(chan - kADCStartChan == 1)
+else if(chan - kADCStartChan == 2)
    {
    val = gLastDCOControlVal;//OSCCTRL->DFLLVAL.bit.FINE;
+   val += 2048;
    }
-val += 2048;
 #endif
 
 //Testing!!

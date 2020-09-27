@@ -30,14 +30,16 @@ const enum PacketType {
 //samples across the ADC channels.
 const kPointsPerDataPacket = 1;
 
-//Larger packet for more efficient data handling at higher sample rate
+//Larger packet for more efficient data handling at higher sample rate.
+// Drops the overhead of the parser and bandwidth. The header would otherwise dominate the available bandwidth. Good from greater than or equal to 100Hz sample rate.
 const kPointsPerMediumSizeDataPacket = 10;
 
 //Don't fire notifications into Lightning too often!
 const kMinimumSamplingUpdatePeriodms = 50;
 const kGetRemoteTimeTimeoutms = 500;
 
-const kPacketHeaderSizeBytes = 3; //not including the packet number
+//not including the packet number. Invariant part of the packet header.
+const kPacketHeaderSizeBytes = 3;
 const kPacketHeaderWithNumber = 4; //including the packet number
 
 const kSampleSizeBytes = 2;
@@ -70,7 +72,7 @@ class BufferWithLen {
    constructor(
       public buf: Buffer,
       public len = 0 //we are not always using the full buffer.length
-   ) {}
+   ) { }
 
    setNewBuffer(buffer: Buffer) {
       this.buf = buffer;
@@ -216,7 +218,9 @@ export class Parser {
 
    onError = (err: Error) => {
       this.lastError = err.message;
-      console.warn(err);
+      if (this.proxyDevice) this.proxyDevice.onError(err);
+      else
+         console.warn(err);
    };
 
    setProxyDevice(proxyDevice: IDataSink | null) {
@@ -316,7 +320,7 @@ export class Parser {
                }
                break;
             case ParserState.kUnexpectedPacket:
-            case ParserState.kHasExpectedPacket:
+            case ParserState.kHasExpectedPacket: {
                this.packetPayloadSize =
                   packetTypeToSize(this.packetType, this.nADCChannels) -
                   kPacketHeaderSizeBytes -
@@ -335,6 +339,7 @@ export class Parser {
                this.packetType = PacketType.kNotFound;
                this.parserState = ParserState.kNoHeaderBytes;
                --i; //compensate for the for loop ++i that is about to happen before we go around again!
+            }
          } //switch
       } //for
       return i;

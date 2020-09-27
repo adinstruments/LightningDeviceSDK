@@ -24,7 +24,7 @@ export class FirstSampleRemoteTime {
 
 export class Rational {
    //numerator and denominator should be integers
-   constructor(public numerator: number, public denominator: number) {}
+   constructor(public numerator: number, public denominator: number) { }
 }
 
 //Shared between C++ and Typescript: see public/device-api.ts and libs/quark-sys/libs/QuarkCOMInterfaces/IADIDeviceTimeAsynch.h
@@ -44,7 +44,7 @@ export class TimePointInfo {
       public remoteTicksValidBits: number,
 
       public flags: ADITimePointInfoFlags = ADITimePointInfoFlags.kTPInfoDefault
-   ) {}
+   ) { }
 }
 export * from './device-ui-api';
 
@@ -98,6 +98,9 @@ export interface DeviceConnection extends DeviceConnectionInfo {
    release(): void;
    setOption(options: SerialPortOptions): void;
    getLocalSteadyClockTickNow(timeTick: TInt64): void;
+   isOpen(): boolean;
+   lastError(): string;
+   isReceivingData(): boolean; //true if received data within the last 200 ms
 }
 
 export interface DuplexDeviceConnection extends DeviceConnection {
@@ -125,7 +128,7 @@ export interface StreamRingBuffer {
 
    //Internal implementation
    //ringBuffer: Int16Array;
-   ringBufferBuffer: Buffer; //Memory under ringBuffer (shared with Quark)
+   ringBufferBuffer: SharedArrayBuffer; //Memory under ringBuffer (shared with Quark)
    inIndex: number; //read by Quark to see if data is available
    outIndex: number; //written by Quark when data is read from buffer.
 }
@@ -280,7 +283,7 @@ export interface IDeviceStreamApiImpl extends IDeviceStreamApi {
    isEnabled: boolean; //getter returning this.enabled.value
 }
 
-export interface IDeviceSettingsApi extends HierarchyOfDeviceSettingsBase {}
+export interface IDeviceSettingsApi extends HierarchyOfDeviceSettingsBase { }
 
 export interface IDeviceInputSettingsSys {
    range: IDeviceSetting;
@@ -350,7 +353,8 @@ const kDeviceConnectionTypeBase = 0x80230000 | 0;
 export enum TDeviceConnectionType {
    kDevConTypeSerialPort = kDeviceConnectionTypeBase,
    kDevConTypeMockSerialPortForTesting = kDeviceConnectionTypeBase + 1,
-   kDevConTypeMockSerialPortsForTesting = kDeviceConnectionTypeBase + 2
+   kDevConTypeMockSerialPortsForTesting = kDeviceConnectionTypeBase + 2,
+   kDevConTypeSerialOverBluetooth = kDeviceConnectionTypeBase + 3
 }
 
 //Defined in quark-sys\src\callback-and-wait.h
@@ -436,7 +440,12 @@ export interface ProxyDeviceSys {
    //do if there is an error.
    //onSamplingStopped(errorMsg: string /*, errorCode: SamplingError*/): void;
 
-   onDeviceEvent(event: DeviceEvent, message?: string): void;
+   onDeviceEvent(
+      event: DeviceEvent,
+      deviceName: string,
+      message?: string,
+      options?: ISysEventOptions
+   ): void;
 
    onRemoteTimeEvent(
       error: Error | null,
@@ -493,13 +502,66 @@ export enum UnitPrefix {
    kNumUnitPrefixes = kE + 1
 }
 
-//Events fired from JS Open Proxy Devices onDeviceEvent() method, see
-// /libs/quark-sys\libs/QuarkCOMInterfaces/IOpenDeviceConnection.h
+//Events fired from JS Open Proxy Devices onDeviceEvent() method.
+
+//see /libs/quark-sys\libs/QuarkCOMInterfaces/IOpenDeviceConnection.h
 export enum DeviceEvent {
    kDeviceNoEvent = 0 | 0,
    kDeviceStarted = 1 | 0,
    kDeviceStopped = 2 | 0,
-   kDeviceDataLoss = 3 | 0
+   kDeviceDataLoss = 3 | 0,
+   kDeviceStartSamplingWarning = 4 | 0,
+   kDeviceStartSamplingUserQuery = 5 | 0,
+   kDeviceManagerError = 6 | 0,
+   kDeviceEventNoUI = 7 | 0 //e.g. adding annotations with displaying popup
+}
+
+//see /libs/quark-sys\libs/QuarkCOMInterfaces/IOpenDeviceConnection.h
+export enum TMessageSeverity {
+   kMessageNoSeverity = 0 | 0, //Let the TS code choose, e.g. a suspender implies a warning by default
+   kMessageInfo = 1 | 0,
+   kMessageWarn = 2 | 0,
+   kMessageError = 3 | 0
+}
+
+//Future use
+//see /libs/quark-sys\libs/QuarkCOMInterfaces/IOpenDeviceConnection.h
+export enum TMessageFlags {
+   kMessageFlagsNil = 0 | 0,
+   kMessageAddAnotation = 0x80000000 | 0
+}
+
+export enum MetaDataColors {
+   kLimeGreen,
+   kGreen,
+   kBlueGreen,
+   kBlue,
+   kLightBlue,
+   kColorInfo = kLightBlue,
+   kPurple,
+   kYellow,
+   kRed,
+   kColorError = kRed,
+   kOrange,
+   kColorWarning = kOrange,
+   kGray,
+   kMagenta,
+   kBrown
+}
+
+export interface AnnotationMetadataSys {
+   tags: { name: string; type: string }[];
+   colorIndex: MetaDataColors;
+   subject?: string; // Optional, means 'ALL' is against 'subject' not dataset
+}
+
+//See setOptionsOnDeviceEventInfo in quark-sys\libs\device-manager\OpenProxyDevice.cpp
+export interface ISysEventOptions {
+   onceOnly?: string;
+   severity?: TMessageSeverity;
+   flags?: TMessageFlags;
+   streamIndex?: number;
+   metadata?: AnnotationMetadataSys;
 }
 
 export interface IWritable {
@@ -637,6 +699,8 @@ export interface IDataSink {
       error: Error | null,
       timePoint: TimePoint | FirstSampleRemoteTime | null
    ): void;
+   onPacket?(packetType: unknown, buffer: unknown): void;
+   onError(err: Error): void;
 }
 
 //The JS part of the ProxyDevice called from Quark
