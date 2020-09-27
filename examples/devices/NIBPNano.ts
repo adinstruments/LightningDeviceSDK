@@ -10,6 +10,7 @@ import {
    DeviceValueType,
    IDeviceInputSettingsSys,
    IDeviceStreamApi,
+   IDeviceStreamApiImpl,
    UnitsInfo,
    UnitPrefix,
    IDuplexStream,
@@ -25,7 +26,8 @@ import {
    IUIElementApi,
    IDeviceSettingsApi,
    IDeviceManagerApi,
-   IUIAreaApi
+   IUIAreaApi,
+   DeviceProxyId
 } from '../../public/device-api';
 
 import { Setting } from '../../public/device-settings';
@@ -58,6 +60,8 @@ import { PluginFeatureTypes } from '../../public/plugin-api';
  * 3. DeviceClass: an object that represents the device class and can find and create PhysicalDevice
  *    objects of its class, as well as the ProxyDevice objects.
  */
+
+const kDefaultCuffSwitchingInterval = 15;
 
 const nanoErrorArray = [
    ['NoError', ''],
@@ -500,7 +504,7 @@ function getDefaultUnits(chanType: number) {
 enum CuffMode {
    UseCuff1 = 1, // Matches value hardware expects
    UseCuff2 = 2,
-   SwitchCuffs
+   SwitchCuffs = 3
 }
 
 type CuffSwitchInterval = 1 | 15 | 30 | 60;
@@ -613,11 +617,19 @@ class InputSettings {
    }
 }
 
-class StreamSettings implements IDeviceStreamApi {
+class StreamSettings implements IDeviceStreamApiImpl {
    enabled: any;
    samplesPerSec: any;
    streamName: string;
    inputSettings: InputSettings;
+
+   get isEnabled() {
+      return !!this.enabled.value;
+   }
+
+   set isEnabled(enabled: boolean) {
+      this.enabled.value = enabled;
+   }
 
    setValues(other: IDeviceStreamApi) {
       this.enabled.setValue(other.enabled);
@@ -677,7 +689,7 @@ const crcLen = 1;
 
 // CRC-8 Dallas/Maxim - x^8 + x^5 + x^4 + x^1
 function calcCRC(payload: number[]) {
-   let crc = 0;
+   let crc = 0 | 0;
 
    for (let chrCount = 0; chrCount < payload.length; ++chrCount) {
       let chr = payload[chrCount];
@@ -729,23 +741,60 @@ function toBytesInt32(i32: number) {
    return new Uint8Array(arr);
 }
 
+// CRC-8 Dallas/Maxim - x^8 + x^5 + x^4 + x^1
+function calcCRC2(payload: Uint8Array, start: number, end: number) {
+   let crc = 0 | 0;
+
+   for (let chrCount = start; chrCount < end; ++chrCount) {
+      let chr = payload[chrCount];
+
+      for (let bitCount = 0; bitCount < 8; ++bitCount) {
+         const mix = (chr ^ crc) & 1;
+
+         crc >>= 1;
+         chr >>= 1;
+
+         if (mix) crc ^= 0x8c;
+      }
+   }
+
+   return crc;
+}
+
 const NanoTxSampCmds = Object.freeze({
    // [kSTX, cmdWriteLEN, cmdWriteLEN, kSTX, cmdID, [cmd-data], [crc]]
-   // crc's have been pre-calculated for all send commands except kSetCuffSwitchInt
+   // crc's have been pre-calculated for all send commands except switchIntervalCommand
    kAlive: new Uint8Array([kSTX, 0x01, 0x01, kSTX, 0x61, 0x3b]),
 
-   switchIntervalCommand: (interval: CuffSwitchInterval) =>
-      new Uint8Array([
+   switchIntervalCommand: (interval: CuffSwitchInterval) => {
+      const message = new Uint8Array([
          kSTX,
          0x02,
          0x02,
          kSTX,
          0x63,
-         interval << 2, // interval in mins is at bits 2-7
-         0xf3
-      ]),
+         (interval << 2) | 0x00, // interval in mins is at bits 2-7
+         0
+      ]);
+      message[6] = calcCRC2(message, 4, 6);
+      return message;
+   },
 
-   kSetCuffSwitchInt: new Uint8Array([kSTX, 0x02, 0x02, kSTX, 0x63]),
+   resetCuffScheduler: () => {
+      const message = new Uint8Array([
+         kSTX,
+         0x02,
+         0x02,
+         kSTX,
+         0x63,
+         (0x3f << 2) | 0x00, // interval in mins is at bits 2-7
+         0
+      ]);
+      message[6] = calcCRC2(message, 4, 6);
+      return message;
+   },
+
+   kDisableCuffSwitching: nanoWriteMessage([code('c'), 0]),
    kUseCuffOne: nanoWriteMessage([code('c'), CuffMode.UseCuff1]),
    kUseCuffTwo: nanoWriteMessage([code('c'), CuffMode.UseCuff2]),
 
@@ -914,6 +963,7 @@ class NanoParser {
    // autoCal is enabled by default
    physioCalEnabled: boolean;
    hcuStatusChanged: boolean;
+   cuffSwitchingInterval: CuffSwitchInterval;
 
    constructor(inStream: IDuplexStream, deviceName: string) {
       this.state = NanoState.kUnknown;
@@ -956,6 +1006,8 @@ class NanoParser {
       this.physioCalEnabled = true;
 
       this.hcuStatusChanged = false;
+
+      this.cuffSwitchingInterval = kDefaultCuffSwitchingInterval;
 
       this.inStream.on('error', this.onError);
       this.inStream.on('data', this.onData);
@@ -1053,6 +1105,8 @@ class NanoParser {
    }
 
    setCuffMode(mode: CuffMode) {
+      this.write(NanoTxSampCmds.resetCuffScheduler());
+
       switch (mode) {
          case CuffMode.UseCuff1:
             this.write(NanoTxSampCmds.kUseCuffOne);
@@ -1061,7 +1115,7 @@ class NanoParser {
             this.write(NanoTxSampCmds.kUseCuffTwo);
             break;
          case CuffMode.SwitchCuffs:
-            this.write(NanoTxSampCmds.kSetCuffSwitchInt);
+            this.setCuffSwitchInterval(this.cuffSwitchingInterval);
             break;
          default:
             throw Error(`Setting cuff mode failed. Unknown mode: '${mode}'`);
@@ -1069,7 +1123,10 @@ class NanoParser {
    }
 
    setCuffSwitchInterval(interval: CuffSwitchInterval) {
-      this.write(NanoTxSampCmds.switchIntervalCommand(interval));
+      this.cuffSwitchingInterval = interval;
+      this.write(
+         NanoTxSampCmds.switchIntervalCommand(this.cuffSwitchingInterval)
+      );
    }
 
    isSampling() {
@@ -1105,6 +1162,8 @@ class NanoParser {
 
    startSampling(settings: INIBPSettings) {
       if (!this.inStream || !this.proxyDevice) return false;
+
+      settings.sendToHardware();
 
       // First stop doing whatever is currently happening unless we are already
       // "Ready"
@@ -1702,10 +1761,7 @@ export class NIBPSettings implements INIBPSettings {
       this.cuffSwitchingInterval.setValue(settingsData.cuffSwitchingInterval);
    }
 
-   // Called when a physical device becomes available for use in the recording.
-   onPhysicalDeviceConnected(parser: NanoParser) {
-      this.hcuZero = this.doHcuZero(parser);
-
+   sendToHardware() {
       this.testMode.sendToHardware();
       this.testType.sendToHardware();
       this.testSteadyPressure.sendToHardware();
@@ -1713,8 +1769,23 @@ export class NIBPSettings implements INIBPSettings {
       this.testSquareWaveFreq.sendToHardware();
 
       this.autoCalibrate.sendToHardware();
-      this.cuffMode.sendToHardware();
-      this.cuffSwitchingInterval.sendToHardware();
+
+      switch (this.cuffMode.asNumber) {
+         case CuffMode.UseCuff1:
+         case CuffMode.UseCuff2:
+            this.cuffMode.sendToHardware();
+            break;
+         default:
+            this.cuffSwitchingInterval.sendToHardware();
+            break;
+      }
+   }
+
+   // Called when a physical device becomes available for use in the recording.
+   onPhysicalDeviceConnected(parser: NanoParser) {
+      this.hcuZero = this.doHcuZero(parser);
+
+      this.sendToHardware();
    }
 
    private static defaultEnabled = {
@@ -1972,7 +2043,7 @@ export class NIBPSettings implements INIBPSettings {
       this.cuffSwitchingInterval = new Setting(
          {
             settingName: 'Switching interval',
-            value: 5,
+            value: kDefaultCuffSwitchingInterval,
             options: [
                {
                   value: 1,
@@ -2300,7 +2371,7 @@ class ProxyDevice implements IProxyDevice {
       this.outStreamBuffers = [];
       let index = 0;
       for (const stream of this.settings.dataInStreams) {
-         if (stream && stream.enabled) {
+         if (stream && stream.isEnabled) {
             const nSamples = Math.max(
                bufferSizeInSecs *
                   ((stream.samplesPerSec as IDeviceSetting).value as number),
@@ -2475,9 +2546,12 @@ class DeviceClass implements IDeviceClass {
       deviceConnection: DuplexDeviceConnection,
       callback: (error: Error | null, device: PhysicalDevice | null) => void
    ) {
+      const vid = deviceConnection.vendorId.toUpperCase();
+      const pid = deviceConnection.productId.toUpperCase();
+
       if (
-         deviceConnection.vendorId !== '0403' ||
-         deviceConnection.productId !== '6001' ||
+         vid !== '0403' ||
+         pid !== '6001' ||
          deviceConnection.manufacturer !== 'FTDI'
       ) {
          // Did not find one of our devices on this connection
@@ -2519,7 +2593,7 @@ class DeviceClass implements IDeviceClass {
 
          // this iterates through the version commands and constructs a versionInfoArray
          if (this.versionInfoArray.length == 4) {
-            const deviceName = 'Nano Core OEM';
+            const deviceName = 'Human NIBP Nano';
             devStream.destroy(); // stop 'data' and 'error' callbacks
             const physicalDevice = new PhysicalDevice(
                this,
@@ -2562,11 +2636,6 @@ class DeviceClass implements IDeviceClass {
       descriptor: OpenPhysicalDeviceDescriptor,
       availablePhysDevices: OpenPhysicalDeviceDescriptor[]
    ): number {
-      console.log(
-         'NIBP.indexOfBestMatchingDevice called',
-         descriptor,
-         availablePhysDevices
-      );
       return 0;
    }
 }
@@ -2596,7 +2665,7 @@ class NIBPNanoUI implements IDeviceUIApi {
     */
    describeDeviceSettingsUI(
       deviceSettings: IDeviceSettingsApi,
-      deviceIndex: number,
+      deviceId: DeviceProxyId,
       deviceManager: IDeviceManagerApi
    ): IUIAreaApi {
       const elements: IUIElementApi[] = [];
@@ -2617,11 +2686,21 @@ class NIBPNanoUI implements IDeviceUIApi {
          title: 'Sampling setup'
       });
 
+      const ZERO_SUPPORT = false;
+      if (!ZERO_SUPPORT) {
+         elements.push({
+            type: 'message',
+            text:
+               'NOTE: height correction is not yet supported and has been disabled.'
+         });
+      }
+
       elements.push({
          type: 'action',
          label: 'Height correction',
          buttonText: 'Zero',
          actionInProgressText: 'Zeroing',
+         disabled: !ZERO_SUPPORT,
          calcDisabled: () => isSampling || testModeEnabled,
          action: callback => {
             // Let the UI know we've started a time-consuming action.
@@ -2633,7 +2712,7 @@ class NIBPNanoUI implements IDeviceUIApi {
 
             const pathToDevice = deviceManager.settingsPath({
                type: 'device',
-               deviceIndex
+               deviceId
             });
 
             // Make the process take a wee bit of time so the user feels the button click

@@ -13,7 +13,8 @@ import {
    DeviceInputStatusTypes,
    IDeviceManagerApi,
    IDeviceSettingsApi,
-   HierarchyOfDeviceSettingsBase
+   HierarchyOfDeviceSettingsBase,
+   DeviceProxyId
 } from './device-api';
 import { IPluginModuleFeature, ILcModel } from './plugin-api';
 
@@ -446,12 +447,12 @@ export interface IJsDeviceUI {
     * for this device. Optional.
     *
     * @param streamSettings settings for the current stream within the recording.
-    * @param deviceIndex 0-based index of the stream's device within the recording.
+    * @param deviceId The device's id.
     * @param deviceManager Reference to the current device manager.
     */
    describeStreamSettingsUI?: (
       streamSettings: IDeviceStreamApi,
-      deviceIndex: number,
+      deviceId: DeviceProxyId,
       deviceManager: IDeviceManagerApi
    ) => IUIAreaApi | undefined;
 
@@ -460,12 +461,12 @@ export interface IJsDeviceUI {
     * hardware options. Optional.
     *
     * @param deviceSettings settings for the device.
-    * @param deviceIndex 0-based index of the stream's device within the recording.
+    * @param deviceIndex The device's id.
     * @param deviceManager Reference to the current device manager.
     */
    describeDeviceSettingsUI?: (
       deviceSettings: IDeviceSettingsApi,
-      deviceIndex: number,
+      deviceId: DeviceProxyId,
       deviceManager: IDeviceManagerApi
    ) => IUIAreaApi | undefined;
 }
