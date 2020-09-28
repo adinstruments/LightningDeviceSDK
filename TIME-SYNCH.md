@@ -19,7 +19,7 @@ These techniques are:
 ### USB-frame time synch
 USB-frame time synch is the most accurate technique and is currently used by PowerLabs. It requires that the devices are plugged into the same USB hub so the USB Start Of Frame (SOF) signal can be used to provide a common 'clock' that can be read by all devices. This results in an error < +/- 50 us for devices with firmware support for this.
 
-The SDK provides example firmware for MicroChip SAMD51 and SAMD21 microcontrollers showing how to lock the master clock (used to initiate Analog to Digital Converter (ADC) conversions) to the USB Start of Frame signal using the Digital Frequency Locked Loop (DFLL) feature provided by these processors. Because of the highly accurate inter-device timing enabled by this scheme, we recommend using the SAMD series for new designs.
+The SDK provides example firmware for MicroChip SAMD51 and SAMD21 microcontrollers showing how to lock the master clock (used to initiate Analog to Digital Converter (ADC) conversions) to the USB Start of Frame signal using the Digital Frequency Locked Loop (DFLL) feature provided by these processors. Because of the highly accurate inter-device timing enabled by this scheme, we recommend using the SAMD51 or SAMD21 series for new designs.
 
 ### Round-trip time synch
 Round-trip time synch can provide an error < +/- 1 ms and requires the firmware and the device script to implement support for two measurements:
