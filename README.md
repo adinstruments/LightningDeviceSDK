@@ -60,7 +60,7 @@ npm install
 
 Note: `npm` is the Node Package Manager which comes with Node.js and should already be installed with the steps above.
 
-In order for your plugin to be loaded by Lightning it must be placed into the following location (it is up to you to create these folders or simply run `npm run watch` - explained below):
+In order for your plugin to be loaded by Lightning it must be placed into the following location: 
 
 (Windows)  
 `C:\Users\[USERNAME]\Documents\LabChart Lightning\Plugins\devices`
@@ -68,13 +68,15 @@ In order for your plugin to be loaded by Lightning it must be placed into the fo
 (macOS)  
 `~/Documents/LabChart Lightning/Plugins/devices`
 
-It is often useful during development to iterate rapidly and see the resulting changes as early as possible. For this, you can open a terminal and run:
+You can create these folders manually or simply place your plugin source folder under the SDK's `./development/` folder and run `npm run watch`. 
+
+I.e. open a terminal in SDK's root folder and run:
 
 ```
 npm run watch
 ```
 
-This watches for any changes to `.js` or `.ts` files located under `./development/`, automatically copying the updated file(s) to the LabChart Lightning plugins folder.
+This watches for any changes to `.js` or `.ts` files located under `./development/`, automatically copying the updated file(s) to the LabChart Lightning plugins folder. This is useful during development when iterating rapidly so you can see the resulting changes as early as possible.
 
 LabChart Lightning must be relaunched in order to pick up device plugin changes.
 
