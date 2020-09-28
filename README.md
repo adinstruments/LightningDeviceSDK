@@ -22,9 +22,9 @@ See [Changelog](CHANGELOG.md).
 
 ## Upcoming features
 
--  The ability to call arbitrary proxy functions from custom UI
+-  Sub-microsecond inter-device synchronization over USB for Microchip ARM SAMD51 and SAMD21 based devices (e.g. Adafruit Feather M4, M0 etc. and  Sparkfun Thing+ SAMD51)
+-  Calling arbitrary proxy functions from custom UI
 -  Plugins work for non-admin users 
--  Arduino cores to improve device synchronization for SAMD51 and SAMD21 based boards
 -  Better error messaging
 
 ## Getting Started
@@ -47,6 +47,7 @@ Install the needed dependencies:
 If you're developing Arduino firmware:
 - Arduino IDE - https://www.arduino.cc/en/Main/Software
    - Arduino core(s) for the intended board(s)
+   - For best possible time synchronization between devices over USB, we recommend SAM51 based boards, e.g. (e.g. Adafruit Feather M4 etc. and  Sparkfun Thing+ SAMD51)
    - Optionally, the Arduino extension for Visual Studio Code
 
 Clone this repo to your working environment
@@ -59,7 +60,7 @@ npm install
 
 Note: `npm` is the Node Package Manager which comes with Node.js and should already be installed with the steps above.
 
-In order for your plugin to be loaded by Lightning it must be placed into the following location (it is up to you to create these folders or simply run `npm run watch` explained below):
+In order for your plugin to be loaded by Lightning it must be placed into the following location (it is up to you to create these folders or simply run `npm run watch` - explained below):
 
 (Windows)  
 `C:\Users\[USERNAME]\Documents\LabChart Lightning\Plugins\devices`

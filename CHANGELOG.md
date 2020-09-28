@@ -6,7 +6,7 @@
 - Added the abiltiy to send events through to the Lightning UI to prevent or stop sampling. See NIBPNano script for an example - prepareForSampling.
 - Added the ability to create annotations during sampling from a device script, this might be useful if the device has a button to press or if an error occurs in the device. See MentaLabExplore/proxy.ts - onPacket, for an example.
 - Device scripts can implement a reopen function on their proxy which can be used to refresh the connection to a device. See MentaLabExplore/proxy.ts - reopen, for an example
-
+- Example Arduino firmware for SAMD51 and SAMD21 devices now implements stable, USB locked, sampling clocks, to support zero timing drift between devices plugged into the same USB hub.
 
 ### v0.1.6 - 8/11/2020
 - Added two example Arduino device scripts: ArduinoRoundTrip and ArduinoNoSynch
