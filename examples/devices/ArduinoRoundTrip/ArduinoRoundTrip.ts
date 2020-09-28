@@ -880,7 +880,7 @@ class ProxyDevice implements IProxyDevice {
          if (stream && stream.isEnabled) {
             const nSamples = Math.max(
                bufferSizeInSecs *
-                  ((stream.samplesPerSec as IDeviceSetting).value as number),
+               ((stream.samplesPerSec as IDeviceSetting).value as number),
                kMinOutBufferLenSamples
             );
             this.outStreamBuffers.push(
@@ -1024,13 +1024,13 @@ export class DeviceClass implements IDeviceClass {
     * Called when the app shuts down. Chance to release any resources acquired during this object's
     * life.
     */
-   release(): void {}
+   release(): void { }
 
    /**
     * Required member for devices that support being run against Lightning's
     * test suite.
     */
-   clearPhysicalDevices(): void {}
+   clearPhysicalDevices(): void { }
 
    onError(err: Error): void {
       console.error(err);
@@ -1074,19 +1074,18 @@ export class DeviceClass implements IDeviceClass {
    ): void {
       const vid = deviceConnection.vendorId.toUpperCase();
       const pid = deviceConnection.productId.toUpperCase();
-      if (
-         !(vid === '2341' && pid === '003E') && //&& //Due Native port 003E
-         //!(vid === '2341' && pid === '003D') && //Due Programming port 003D not recommended!
-
-         /** N.B. The following SAMD devices do not have stable timing unless the Arduino firmware (sketch)
-          *  is built using the ADInstruments Arduino core!
-          */
-         !(vid === '239A' && pid === '801B') && //ADAFruit Feather M0 Express
-         !(vid === '239A' && pid === '8022') && //ADAFruit Feather M4
-         !(vid === '1B4F' && pid === 'F016') //Sparkfun Thing Plus SAMD51
-
-         //!(deviceConnection.manufacturer === 'Arduino LLC (www.arduino.cc)')
-      ) {
+      let deviceName = '';
+      if (vid === '2341' && pid === '003E')
+         deviceName = 'Arduino Due'; //Due Native port 003E
+      // else if(vid === '2341' && pid === '003D')
+      //    deviceName = 'Due Programming port';  //not recommended!
+      else if (vid === '239A' && pid === '801B')
+         deviceName = 'ADAFruit Feather M0 Express';
+      else if (vid === '239A' && pid === '8022')
+         deviceName = 'ADAFruit Feather M4';
+      else if (vid === '1B4F' && pid === 'F016')
+         deviceName = 'Sparkfun Thing Plus SAMD51';
+      else {
          callback(null, null); // Did not find one of our devices on this connection
          return;
       }
@@ -1095,7 +1094,8 @@ export class DeviceClass implements IDeviceClass {
       const kTimeoutms = 2000; // Time for device to  respond
       const devStream = new DuplexStream(deviceConnection);
 
-      const friendlyName = deviceConnection.friendlyName;
+      const friendlyName = deviceName; //deviceConnection.friendlyName;
+      const connectionName = deviceConnection.friendlyName;
 
       //node streams default to 'utf8' encoding, which most devices won't understand.
       //With 'utf8' encoding, non-ascii chars, such as:
@@ -1143,6 +1143,9 @@ export class DeviceClass implements IDeviceClass {
                   friendlyName,
                   versionInfo
                );
+               //TODO: serial number should come from the firmware JSON version info!
+               physicalDevice.serialNumber = connectionName;
+
                callback(null, physicalDevice);
             }
          }
