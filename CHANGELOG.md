@@ -2,6 +2,7 @@
 
 ### v0.1.7 - 25/09/2020
 - Change plugin naming and location requirements. Plugins must be contained within folders inside either `Devices` or `Calculations`. The plugin entry point must be the same name as the folder. Eg. `Devices/SerialSettings/SerialSettings.ts`.
+- Example Arduino firmware for SAMD51 and SAMD21 devices now implements stable, USB locked, sampling clocks, to support zero timing drift between devices plugged into the same USB hub.
 
 ### v0.1.6 - 8/11/2020
 - Added two example Arduino device scripts: ArduinoRoundTrip and ArduinoNoSynch

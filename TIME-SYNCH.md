@@ -12,12 +12,14 @@ The rate error is caused by the crystal oscillators in the devices not having ex
 There are currently three techniques Lightning can use to reduce both these types of error which can result in adequate synchronisation for many purposes. These techniques rely on Lightning resampling data from the devices, using information provided by those devices, so the recorded samples are aligned as accurately as possible across channels.
 
 These techniques are:
-1. USB-frame time synch (typical error +/- 50 µs)
+1. USB-frame time synch (typical error +/- 50 µs, potential error < +/- 1µs for SAMD USB locked devices)
 2. Round-trip time synch (typical error +/- 1 ms)
 3. Sample-counting time synch (typical error +/- 100 ms)
 
 ### USB-frame time synch
-USB-frame time synch is the most accurate technique and is currently used by PowerLabs. It requires that the devices are plugged into the same USB hub so the USB Start Of Frame (SOF) signal can be used to provide a common 'clock' that can be read by all devices. This results in an error < +/- 50 us for devices with firmware support for this. A future version of the SDK is likely to provide example support for USB-frame time synch for MicroChip SAMD51 and SAMD21 microcontrollers.
+USB-frame time synch is the most accurate technique and is currently used by PowerLabs. It requires that the devices are plugged into the same USB hub so the USB Start Of Frame (SOF) signal can be used to provide a common 'clock' that can be read by all devices. This results in an error < +/- 50 us for devices with firmware support for this.
+
+The SDK provides example firmware for MicroChip SAMD51 and SAMD21 microcontrollers showing how to lock the master clock (used to initiate Analog to Digital Converter (ADC) conversions) to the USB Start of Frame signal using the Digital Frequency Locked Loop (DFLL) feature provided by these processors. Because of the highly accurate inter-device timing enabled by this scheme, we recommend using the SAMD series for new designs.
 
 ### Round-trip time synch
 Round-trip time synch can provide an error < +/- 1 ms and requires the firmware and the device script to implement support for two measurements:

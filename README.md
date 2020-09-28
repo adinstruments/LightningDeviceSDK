@@ -21,7 +21,7 @@ See [Changelog](CHANGELOG.md).
 
 ## Upcoming features
 
--  Arduino cores to improve device synchronization for SAMD51 and SAMD21 based boards
+-  Sub-microsecond inter-device synchronization over USB for Microchip ARM SAMD51 and SAMD21 based devices (e.g. Adafruit Feather M4, M0 etc. and  Sparkfun Thing+ SAMD51)
 -  Better error messaging
 
 ## Getting Started
@@ -42,6 +42,7 @@ Install the needed dependencies:
    -  Install VS Code extension: ESLint
 - Arduino IDE - https://www.arduino.cc/en/Main/Software
    - Arduino core(s) for the intended board(s)
+   - For best possible time synchronization between devices over USB, we recommend SAM51 based boards, e.g. (e.g. Adafruit Feather M4 etc. and  Sparkfun Thing+ SAMD51)
    - Optionally, the Arduino extension for Visual Studio Code
 
 Clone this repo to your working environment
