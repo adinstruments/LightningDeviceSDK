@@ -13,6 +13,7 @@ The LightningDeviceSDK provides functionality to write device connection plugins
 ### Supported Device Classes
 
 -  Serial
+-  Bluetooth over Serial (Serial Port Profile)
 -  More to come...
 
 ## Change log
@@ -21,6 +22,8 @@ See [Changelog](CHANGELOG.md).
 
 ## Upcoming features
 
+-  The ability to call arbitrary proxy functions from custom UI
+-  Plugins work for non-admin users 
 -  Arduino cores to improve device synchronization for SAMD51 and SAMD21 based boards
 -  Better error messaging
 
@@ -40,6 +43,8 @@ Install the needed dependencies:
 -  Node.js - https://nodejs.org/en/download/
 -  Visual Studio Code - https://code.visualstudio.com/download
    -  Install VS Code extension: ESLint
+
+If you're developing Arduino firmware:
 - Arduino IDE - https://www.arduino.cc/en/Main/Software
    - Arduino core(s) for the intended board(s)
    - Optionally, the Arduino extension for Visual Studio Code

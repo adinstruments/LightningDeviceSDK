@@ -1,7 +1,12 @@
 # LightningDeviceSDK Change Log
 
-### v0.1.7 - 25/09/2020
+### v0.1.7 - 28/09/2020
+- Added MentaLab Explore device example. this device uses a new type of connection -  kDevConTypeSerialOverBluetooth
 - Change plugin naming and location requirements. Plugins must be contained within folders inside either `Devices` or `Calculations`. The plugin entry point must be the same name as the folder. Eg. `Devices/SerialSettings/SerialSettings.ts`.
+- Added the abiltiy to send events through to the Lightning UI to prevent or stop sampling. See NIBPNano script for an example - prepareForSampling.
+- Added the ability to create annotations during sampling from a device script, this might be useful if the device has a button to press or if an error occurs in the device. See MentaLabExplore/proxy.ts - onPacket, for an example.
+- Device scripts can implement a reopen function on their proxy which can be used to refresh the connection to a device. See MentaLabExplore/proxy.ts - reopen, for an example
+
 
 ### v0.1.6 - 8/11/2020
 - Added two example Arduino device scripts: ArduinoRoundTrip and ArduinoNoSynch
