@@ -27,16 +27,19 @@ class MockDeviceConnection {
    start(): boolean {
       return true;
    } //returns true if started or already running
-   stop(): void {}
+   stop(): void { }
    setReadHandler(
       callback: (error: Error | null, buffer: Int8Array | null) => void
-   ): void {}
-   onStreamDestroy(): void {} //reset the callback
-   release(): void {}
-   setOption(options: SerialPortOptions): void {}
+   ): void { }
+   onStreamDestroy(): void { } //reset the callback
+   release(): void { }
+   setOption(options: SerialPortOptions): void { }
 
-   getLocalSteadyClockTickNow(timeTick: TInt64): void {}
-   write(buffer: Buffer, callback: (error?: Error) => void): void {}
+   getLocalSteadyClockTickNow(timeTick: TInt64): void { }
+   write(buffer: Buffer, callback: (error?: Error) => void): void { }
+   isOpen(): boolean { return true; }
+   lastError(): string { return ''; }
+   isReceivingData(): boolean { return true; }
 }
 
 class MockStream implements IDuplexStream {
@@ -76,17 +79,17 @@ class MockStream implements IDuplexStream {
       chunk: any,
       encoding: BufferEncoding,
       callback: (error?: Error | null) => void
-   ): void {}
+   ): void { }
    setDefaultEncoding(encoding: string): this {
       return this;
    }
-   destroy(error?: Error): void {}
+   destroy(error?: Error): void { }
 
    isRunning: boolean;
    lastErr: Error | null;
    timeoutms: number;
 
-   setReadTimeout(ms: number): void {}
+   setReadTimeout(ms: number): void { }
    //   _read(size: number): void;
    //on: (event: string | symbol, listener: (...args: any[]) => void) => void;
 
@@ -120,16 +123,18 @@ class MockStreamBuffer implements IStreamBuffer {
 class MockDataSink implements IDataSink {
    outStreamBuffers: MockStreamBuffer[];
 
-   onSamplingStarted(): void {}
-   onSamplingUpdate(): void {}
-   onSamplingStopped(errorMsg: string): void {}
+   onSamplingStarted(): void { }
+   onSamplingUpdate(): void { }
+   onSamplingStopped(errorMsg: string): void { }
    onRemoteTimeEvent(
       error: Error | null,
       timePoint: TimePoint | FirstSampleRemoteTime | null
-   ): void {}
+   ): void { }
 
-   constructor(nStreams: number = 2) {
-      this.outStreamBuffers = new Array();
+   onError(error: Error): void { }
+
+   constructor(nStreams = 2) {
+      this.outStreamBuffers = [];
       for (let i = 0; i < nStreams; ++i) {
          const buffer = new MockStreamBuffer();
          buffer.writeInt = jest.fn();

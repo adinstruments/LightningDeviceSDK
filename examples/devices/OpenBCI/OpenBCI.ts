@@ -98,16 +98,15 @@ class PhysicalDevice implements OpenPhysicalDevice {
 
    constructor(
       deviceClass: IDeviceClass,
-      deviceConnection: DuplexDeviceConnection,
+      inStream: DuplexStream,
       versionInfo: string
    ) {
-      this.deviceConnection = deviceConnection;
+      this.deviceConnection = inStream.source;
       this.typeName = 'Unknown';
       this.numberOfChannels = 0;
 
       this.onError = this.onError.bind(this);
       this.processVersionInfo(versionInfo);
-      const inStream = new DuplexStream(this.deviceConnection);
       this.parser = new CytonParser(inStream);
       this.deviceName = deviceClass.getDeviceClassName() + ' ' + this.typeName;
    }
@@ -148,7 +147,7 @@ class PhysicalDevice implements OpenPhysicalDevice {
       let adcs = 0;
 
       const searchStr = 'ADS1299';
-      for (let adcPos = 0; true; ) {
+      for (let adcPos = 0; true;) {
          adcPos = versionInfo.indexOf(searchStr, adcPos);
          if (adcPos < 0) break;
          ++adcs;
@@ -689,6 +688,35 @@ class ProxyDevice implements IProxyDevice {
       console.warn(err);
    }
 
+   reopen = (
+      argJson: {} | undefined,
+      callback: (
+         error: Error | null,
+         result: { connectionError: boolean, deviceError: string } | null
+      ) => void
+   ): void => {
+      if (!this.physicalDevice) {
+         callback(new Error("No physical device!"), null);
+         return;
+      }
+      if (!this.physicalDevice.deviceConnection) {
+         callback(new Error("No physical device connection!"), null);
+         return;
+      }
+      const connection = this.physicalDevice.deviceConnection;
+
+      try {
+         connection.stop();
+         connection.start();
+      } catch (ex) {
+         callback(null, { connectionError: true, deviceError: ex.message });
+         return;
+      }
+      const lastError = connection.lastError();
+      callback(null, { connectionError: !!lastError, deviceError: lastError });
+   };
+
+
    /**
     * Called for both new and existing recordings. Initialize all settings for this device that are
     * to be saved in the recording.
@@ -914,7 +942,7 @@ class ProxyDevice implements IProxyDevice {
          if (stream && stream.isEnabled) {
             const nSamples = Math.max(
                bufferSizeInSecs *
-                  ((stream.samplesPerSec as IDeviceSetting).value as number),
+               ((stream.samplesPerSec as IDeviceSetting).value as number),
                kMinOutBufferLenSamples
             );
             this.outStreamBuffers.push(
@@ -1027,7 +1055,7 @@ class DeviceClass implements IDeviceClass {
     * Called when the app shuts down. Chance to release any resources acquired during this object's
     * life.
     */
-   release(): void {}
+   release(): void { }
 
    /**
     * @returns the name of the class of devices
@@ -1056,21 +1084,15 @@ class DeviceClass implements IDeviceClass {
       return TDeviceConnectionType.kDevConTypeMockSerialPortForTesting;
    }
 
-   makePhysicalDevice(
-      deviceConnection: DuplexDeviceConnection,
-      versionInfo: string
-   ): PhysicalDevice {
-      return new PhysicalDevice(this, deviceConnection, versionInfo);
-   }
-
    // This is the method that will be called when integration tests are running.
    checkDeviceIsPresentTEST(
       deviceConnection: DuplexDeviceConnection,
       callback: (error: Error | null, device: OpenPhysicalDevice | null) => void
    ): void {
+      const devStream = new DuplexStream(deviceConnection);
       const physicalDevice = new PhysicalDevice(
          this,
-         deviceConnection,
+         devStream,
          'OpenBCI V3 8-16 channel\n\
          On Board ADS1299 Device ID: 0x3E\n\
          LIS3DH Device ID: 0x33\n\
@@ -1108,6 +1130,7 @@ class DeviceClass implements IDeviceClass {
       // Give up if device is not detected within the timeout period
       const kTimeoutms = 3000; // Time for device to reboot and respond
       const devStream = new DuplexStream(deviceConnection);
+      const friendlyName = deviceConnection.friendlyName;
 
       deviceConnection.setOption({ baud_rate: 115200 });
 
@@ -1120,12 +1143,23 @@ class DeviceClass implements IDeviceClass {
       // connect error handler
       devStream.on('error', (err: Error) => {
          console.log(err); // errors include timeouts
-         devStream.destroy(); // stop 'data' and 'error' callbacks
+         devStream.destroyConnection(); // stop 'data' and 'error' callbacks
          callback(err, null); // errors include timeouts
       });
 
       const deviceClass = this;
       let resultStr = '';
+
+      // Give up if device is not detected within the timeout period
+      const deviceVersionTimeout = global.setTimeout(() => {
+         devStream.destroyConnection(); // stop 'data' and 'error' callbacks
+         const err = new Error(
+            `Timed out: device ${friendlyName} did not respond to version request.`
+         );
+         console.warn(err);
+         callback(err, null);
+      }, kTimeoutms);
+
       // connect data handler
       devStream.on('data', (newBytes: Buffer) => {
          const newStr = newBytes.toString();
@@ -1136,21 +1170,18 @@ class DeviceClass implements IDeviceClass {
             const startPos = resultStr.indexOf('OpenBCI');
             if (startPos >= 0) {
                // We found an OpenBCI device
-               devStream.destroy(); // stop 'data' and 'error' callbacks
+               clearTimeout(deviceVersionTimeout);
 
                const versionInfo = resultStr.slice(startPos, endPos);
                const physicalDevice = new PhysicalDevice(
                   deviceClass,
-                  deviceConnection,
+                  devStream,
                   versionInfo
                );
                callback(null, physicalDevice);
             }
          }
       });
-
-      // Give up if device is not detected within the timeout period
-      devStream.setReadTimeout(kTimeoutms);
 
       // Tell the OpenBCI device to reboot and emit its version string.
       devStream.write('v');
