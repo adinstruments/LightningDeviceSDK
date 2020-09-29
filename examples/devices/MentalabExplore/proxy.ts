@@ -23,13 +23,13 @@ import { PhysicalDevice } from './physicalDevice';
 import {
    getDefaultDisabledStreamSettings,
    getDefaultSettings,
-   kDefaultSamplesPerSec,
    kEnvironmentSamplesPerSec,
-   kMediumRateSamplesPerSec,
    kNumberOrinSignals,
    kOrientationSamplesPerSec,
    kStreamNames,
-   unitsFromPosFullScale
+   unitsFromPosFullScale,
+   findClosestSupportedRate,
+   findClosestSupportedRateIndex
 } from './settings';
 import { PacketType } from './utils';
 
@@ -259,16 +259,8 @@ export class ProxyDevice implements IProxyDevice {
 
             // Only apply changes for one channel, since they are eeg-wide;
             if (streamIndex === 0) {
-               if (samplesPerSec === kDefaultSamplesPerSec) {
-                  this.parser.sendCommand(CommandPacketOp.setSampleRate, 1);
-               } else if (samplesPerSec === kMediumRateSamplesPerSec) {
-                  this.parser.sendCommand(CommandPacketOp.setSampleRate, 2);
-                  // 1000 Hz is currently experimental (23/9/2020)
-                  // } else if (samplesPerSec === kHighRateSamplesPerSec) {
-                  //    this.parser.sendCommand(CommandPacketOp.setSampleRate, 3);
-               } else {
-                  console.warn('Unexpected sample rate request');
-               }
+               const rateIndex = findClosestSupportedRateIndex(samplesPerSec);
+               this.parser.sendCommand(CommandPacketOp.setSampleRate, rateIndex + 1);
             }
          }
       };
@@ -487,7 +479,7 @@ export class ProxyDevice implements IProxyDevice {
                i
             ].samplesPerSec.value = kOrientationSamplesPerSec;
          } else {
-            this.settings.dataInStreams[i].samplesPerSec.value = samplesPerSec;
+            this.settings.dataInStreams[i].samplesPerSec.value = findClosestSupportedRate(samplesPerSec);
          }
       }
 
@@ -523,7 +515,7 @@ export class ProxyDevice implements IProxyDevice {
          if (stream && stream.enabled) {
             const nSamples = Math.max(
                bufferSizeInSecs *
-                  ((stream.samplesPerSec as IDeviceSetting).value as number),
+               ((stream.samplesPerSec as IDeviceSetting).value as number),
                kMinOutBufferLenSamples
             );
             this.outStreamBuffers.push(
@@ -712,7 +704,7 @@ class StreamSettings implements IDeviceStreamApi {
       //enabled by default for now!
       this.enabled = new Setting(
          settingsData.enabled,
-         (setting: IDeviceSetting, newValue: DeviceValueType) => {
+         (setting: Setting, newValue: DeviceValueType) => {
             proxy.updateStreamSettings(streamIndex, this, {}); //N.B. newValue has already been set on value prop
             return newValue;
          }
@@ -720,10 +712,12 @@ class StreamSettings implements IDeviceStreamApi {
 
       this.samplesPerSec = new Setting(
          settingsData.samplesPerSec,
-         (setting: IDeviceSetting, newValue: DeviceValueType) => {
+         (setting: Setting, newValue: DeviceValueType) => {
+            setting._value = findClosestSupportedRate(newValue as number);
             proxy.updateStreamSettings(streamIndex, this, {});
             return newValue;
-         }
+         },
+
       );
    }
 

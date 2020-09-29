@@ -15,10 +15,27 @@ const kNumberBatterySignals = 1;
 export const kNumberOrinSignals =
    kNumberAccSignals + kNumberGyroSignals + kNumberMagSignals;
 
-export const kDefaultSamplesPerSec = 250;
-export const kMediumRateSamplesPerSec = 500;
+
 // 1000 Hz is currently experimental (23/9/2020)
-// const kHighRateSamplesPerSec = 1000;
+export const kSupportedEXGSamplesPerSec = [250, 500 /*,1000*/];
+
+export const kDefaultEXGSamplesPerSecIndex = 0;
+export const kDefaultEXGSamplesPerSec = kSupportedEXGSamplesPerSec[kDefaultEXGSamplesPerSecIndex];
+
+
+export function findClosestSupportedRateIndex(samplesPerSec: number) {
+   //Assumes kSupportedEXGSamplesPerSec is in ascending order. Is the is no exact match
+   //use the closest rate < samplesPerSec.
+   let result = kSupportedEXGSamplesPerSec.findIndex((value) => value > samplesPerSec);
+   if (result <= 0) {
+      return kSupportedEXGSamplesPerSec.length - 1;
+   }
+   return result - 1;
+}
+
+export function findClosestSupportedRate(samplesPerSec: number) {
+   return kSupportedEXGSamplesPerSec[findClosestSupportedRateIndex(samplesPerSec)];
+}
 
 export const kOrientationSamplesPerSec = 20;
 export const kEnvironmentSamplesPerSec = 1;
@@ -276,20 +293,20 @@ function getInputSettings(unitsInfo: UnitsInfo16Bit) {
  */
 const kDefaultExGRates = {
    settingName: 'Rate',
-   value: kDefaultSamplesPerSec,
+   value: kDefaultEXGSamplesPerSec,
    options: [
       {
-         value: kDefaultSamplesPerSec,
-         display: kDefaultSamplesPerSec.toString() + ' Hz'
+         value: kSupportedEXGSamplesPerSec[0],
+         display: kSupportedEXGSamplesPerSec[0].toString() + ' Hz'
       },
       {
-         value: kMediumRateSamplesPerSec,
-         display: kMediumRateSamplesPerSec.toString() + ' Hz'
+         value: kSupportedEXGSamplesPerSec[1],
+         display: kSupportedEXGSamplesPerSec[1].toString() + ' Hz'
       }
       // 1000 Hz is currently experimental (23/9/2020)
       // {
-      //    value: kHighRateSamplesPerSec,
-      //    display: kHighRateSamplesPerSec.toString() + ' Hz'
+      //    value: kSupportedEXGSamplesPerSec[2],
+      //    display: kSupportedEXGSamplesPerSec[2].toString() + ' Hz'
       // }
    ]
 };
