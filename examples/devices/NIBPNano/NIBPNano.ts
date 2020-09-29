@@ -27,18 +27,22 @@ import {
    IDeviceSettingsApi,
    IDeviceManagerApi,
    IUIAreaApi,
-   DeviceProxyId
-} from '../../public/device-api';
+   DeviceProxyId,
+   TMessageSeverity
+} from '../../../public/device-api';
 
-import { Setting } from '../../public/device-settings';
+import { Setting } from '../../../public/device-settings';
 
-import { UnitsInfoImpl } from '../../public/device-units';
+import { UnitsInfoImpl } from '../../../public/device-units';
 
-import { DuplexStream, concatTypedArrays } from '../../public/device-streams';
+import {
+   DuplexStream,
+   concatTypedArrays
+} from '../../../public/device-streams';
 
-import { StreamRingBufferImpl } from '../../public/stream-ring-buffer';
+import { StreamRingBufferImpl } from '../../../public/stream-ring-buffer';
 
-import { PluginFeatureTypes } from '../../public/plugin-api';
+import { PluginFeatureTypes } from '../../../public/plugin-api';
 
 /**
  * Device driver for FMS Nano Core OEM
@@ -1145,7 +1149,17 @@ class NanoParser {
    write(chunk: Uint8Array) {
       // console.log('Send to nano:', chunk);
       this.inStream.write(chunk);
+      // this.pendingWrites.push(chunk);
    }
+
+   // pendingWrites: Uint8Array[] = [];
+
+   // doWrite() {
+   //    // console.log('Send to nano:', chunk);
+   //    console.log(this.pendingWrites);
+   //    this.pendingWrites.forEach(chunk => this.inStream.write(chunk));
+   //    this.pendingWrites = [];
+   // }
 
    exitCurrentMode() {
       switch (this.lastStatusMode) {
@@ -1225,7 +1239,9 @@ class NanoParser {
             if (this.proxyDevice) this.proxyDevice.onSamplingStarted();
 
             // Keep writing alive to tell the nano to keep sampling
-            this.inStream.write(NanoTxSampCmds.kAlive);
+            setTimeout(() => {
+               this.inStream.write(NanoTxSampCmds.kAlive);
+            }, 500);
 
             if (this.oldBytes == null) {
                oldBytes = newBytes;
@@ -1242,7 +1258,7 @@ class NanoParser {
 
             if (this.criticalError && this.proxyDevice) {
                // this.proxyDevice.stopSampling();
-               return;
+               break;
             }
 
             break;
@@ -1252,6 +1268,7 @@ class NanoParser {
          default:
             console.warn('Nano parser: unexpected state:', this.state);
       } //switch
+      // this.doWrite();
    } //onData
 
    processIdleData(byteArray: Buffer) {
@@ -2366,6 +2383,19 @@ class ProxyDevice implements IProxyDevice {
    prepareForSampling(bufferSizeInSecs: number) {
       if (!this.parser || !this.physicalDevice) return false; // Can't sample if no hardware connection
 
+      // Show user a warning, allowing them to cancel sampling.
+      if (this.proxyDeviceSys) {
+         this.proxyDeviceSys.onDeviceEvent(
+            DeviceEvent.kDeviceStartSamplingUserQuery,
+            'Human NIBP Nano',
+            'Sampling will inflate finger cuffs. They can be damaged if inflated while empty.',
+            {
+               onceOnly: 'check-finger-cuffs',
+               severity: TMessageSeverity.kMessageWarn
+            }
+         );
+      }
+
       // Create Array of StreamBuffers (each with a streamIndex property) for
       // each enabled stream.
       this.outStreamBuffers = [];
@@ -2426,13 +2456,17 @@ class ProxyDevice implements IProxyDevice {
 
    onSamplingStarted() {
       if (this.proxyDeviceSys)
-         this.proxyDeviceSys.onDeviceEvent(DeviceEvent.kDeviceStarted);
+         this.proxyDeviceSys.onDeviceEvent(
+            DeviceEvent.kDeviceStarted,
+            this.getDeviceName()
+         );
    }
 
    onSamplingStopped(errorMsg?: string) {
       if (this.proxyDeviceSys)
          this.proxyDeviceSys.onDeviceEvent(
             DeviceEvent.kDeviceStopped,
+            this.getDeviceName(),
             errorMsg
          );
    }

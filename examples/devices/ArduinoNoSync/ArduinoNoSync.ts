@@ -50,17 +50,17 @@ import {
    TimePointInfo,
    ADITimePointInfoFlags,
    FirstSampleRemoteTime
-} from '../../public/device-api';
+} from '../../../public/device-api';
 
-import { Setting } from '../../public/device-settings';
+import { Setting } from '../../../public/device-settings';
 
-import { UnitsInfoImpl, UnitsInfo16Bit } from '../../public/device-units';
+import { UnitsInfoImpl, UnitsInfo16Bit } from '../../../public/device-units';
 
-import { DuplexStream } from '../../public/device-streams';
+import { DuplexStream } from '../../../public/device-streams';
 
-import { StreamRingBufferImpl } from '../../public/stream-ring-buffer';
+import { StreamRingBufferImpl } from '../../../public/stream-ring-buffer';
 
-import { Parser } from '../../public/packet-parser';
+import { Parser } from '../../../public/packet-parser';
 
 //Don't fire notifications into Lightning too often!
 const kMinimumSamplingUpdatePeriodms = 50;
@@ -900,13 +900,17 @@ class ProxyDevice implements IProxyDevice {
 
    onSamplingStarted() {
       if (this.proxyDeviceSys)
-         this.proxyDeviceSys.onDeviceEvent(DeviceEvent.kDeviceStarted);
+         this.proxyDeviceSys.onDeviceEvent(
+            DeviceEvent.kDeviceStarted,
+            this.getDeviceName()
+         );
    }
 
    onSamplingStopped(errorMsg: string) {
       if (this.proxyDeviceSys)
          this.proxyDeviceSys.onDeviceEvent(
             DeviceEvent.kDeviceStopped,
+            this.getDeviceName(),
             errorMsg
          );
    }

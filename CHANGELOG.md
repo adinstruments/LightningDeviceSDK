@@ -1,17 +1,25 @@
 # LightningDeviceSDK Change Log
 
-### v0.1.6 - 8/11/2020
+### v0.1.7 - 28/09/2020
+- Added MentaLab Explore device example. this device uses a new type of connection -  kDevConTypeSerialOverBluetooth
+- Change plugin naming and location requirements. Plugins must be contained within folders inside either `Devices` or `Calculations`. The plugin entry point must be the same name as the folder. Eg. `Devices/SerialSettings/SerialSettings.ts`.
+- Added the abiltiy to send events through to the Lightning UI to prevent or stop sampling. See NIBPNano script for an example - prepareForSampling.
+- Added the ability to create annotations during sampling from a device script, this might be useful if the device has a button to press or if an error occurs in the device. See MentaLabExplore/proxy.ts - onPacket, for an example.
+- Device scripts can implement a reopen function on their proxy which can be used to refresh the connection to a device. See MentaLabExplore/proxy.ts - reopen, for an example
+- Example Arduino firmware for SAMD51 and SAMD21 devices now implements stable, USB locked, sampling clocks, to support zero timing drift between devices plugged into the same USB hub.
+
+### v0.1.6 - 11/08/2020
 - Added two example Arduino device scripts: ArduinoRoundTrip and ArduinoNoSynch
 - Added corresponding Arduino firmware sketches for the Due, SAMD51 and SAMD21 devices, implementing timer-driven ADC sampling 
 - An example packet parser handling the data packets sent from the example device firmware to Lightning
 - Arduino examples demonstrate how to implement round-trip time synchronization to improve inter-device timing accuracy
 - fixed bugs in the packet parser for the OpenBCI.ts, 
 
-### v0.1.5 - 6/24/2020
+### v0.1.5 - 24/06/2020
 - Added support for custom device UI
 - Added two new example device implementations: SerialSettings and SerialWithMappedInputs
 
-### v0.1.4 - 3/09/2020
+### v0.1.4 - 3/06/2020
 - Added support for serial port options(SerialPortOptions)
    - Baud rate 
    - Flow control

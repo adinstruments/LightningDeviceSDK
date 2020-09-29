@@ -5,28 +5,29 @@ import {
    IUIAreaApi,
    IUIElementApi,
    DeviceProxyId
-} from '../../public/device-api';
-import { PluginFeatureTypes } from '../../public/plugin-api';
+} from '../../../public/device-api';
+import { PluginFeatureTypes } from '../../../public/plugin-api';
 
 /**
  * Expose a class that LabChart Lightning will use when evaluating what
  * User Interface to present to the user when configuring devices of this
  * type.
- *
- * Similar to SerialSettingsUI, adding an element for choosing which input
- * to record from.
  */
-class SerialWithMappedInputsUI implements IDeviceUIApi {
+export class DeviceUI implements IDeviceUIApi {
+   name = 'SerialSettings UI';
    type: PluginFeatureTypes = 'Device UI';
-   name = 'SerialWithMappedInputsUI';
-
-   matchesDevice(
-      deviceDisplayName: string,
-      deviceInternalName: string
-   ): boolean {
-      return deviceDisplayName.startsWith('SerialWithMappedInputs');
+   matchesDevice(deviceDisplayName: string) {
+      return deviceDisplayName === 'SerialSettings';
    }
 
+   /**
+    * Defines the user interface elements that will be used to adjust basic
+    * rate / range settings for this device.
+    *
+    * @param streamSettings settings for the current stream within the recording.
+    * @param deviceIndex 0-based index of the stream's device within the recording.
+    * @param deviceManager Reference to the current device manager.
+    */
    describeStreamSettingsUI(
       settings: IDeviceStreamApi,
       deviceId: DeviceProxyId,
@@ -40,7 +41,7 @@ class SerialWithMappedInputsUI implements IDeviceUIApi {
       // name of the current stream.
       elements.push({
          type: 'header',
-         title: 'SerialWithMappedInputs Device',
+         title: 'SerialSettings Device',
          subtitle: `${deviceManager.deviceDisplayName(
             deviceId
          )}, ${settings.streamName || 'Input'}`
@@ -67,18 +68,6 @@ class SerialWithMappedInputsUI implements IDeviceUIApi {
          setting: settings.inputSettings.range
       });
 
-      if (settings.inputId) {
-         elements.push({
-            type: 'setting',
-            setting: settings.inputId,
-            controlType: 'searchable-list',
-            info: 'Choose input to stream from the device'
-         });
-      }
-
-      const desiredWidthPixels = 650;
-      const desiredHeightPixels = 400;
-
       // Include a live sampling preview of the signal with settings applied.
       elements.push({
          type: 'signal-preview'
@@ -87,8 +76,8 @@ class SerialWithMappedInputsUI implements IDeviceUIApi {
       return {
          elements,
          layout: 'default',
-         desiredWidthPixels,
-         desiredHeightPixels
+         desiredWidthPixels: 650,
+         desiredHeightPixels: 400
       };
    }
 }
@@ -97,6 +86,6 @@ module.exports = {
    // Function that Lightning looks for within our exports and invokes on
    // application startup.
    getDeviceUIClasses() {
-      return [new SerialWithMappedInputsUI()];
+      return [new DeviceUI()];
    }
 };
