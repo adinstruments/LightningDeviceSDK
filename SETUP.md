@@ -41,7 +41,7 @@ module.exports = {
 
 In VS Code it should look like this:
 
-![first-code](images/first-code.png)
+![first-code](https://github.com/adinstruments/LightningDeviceSDK/blob/update-readme/images/first-code.PNG)
 
 
 If we reload Lightning, and have the dev tools open, we can see this in the console:
