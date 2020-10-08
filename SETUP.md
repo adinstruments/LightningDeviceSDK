@@ -12,7 +12,7 @@ As a setup check, we can now make a very simple (and very incomplete plugin file
 
 First, let's create a file in `./development/devices/YourDeviceName/YourDeviceName.ts`
 
-![empty-plugin](images/empty-plugin.png)
+![empty-plugin](./images/empty-plugin.png)
 
 
 And, with `npm run watch` continuing to run in the terminal, we can check that a `.ts` file has been automatically generated in `Documents`
