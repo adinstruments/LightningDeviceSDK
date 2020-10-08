@@ -17,7 +17,7 @@ First, let's create a file in `./development/devices/YourDeviceName/YourDeviceNa
 
 And, with `npm run watch` continuing to run in the terminal, we can check that a `.ts` file has been automatically generated in `Documents`
 
-<image rel="preload" src="images/documents.png" alt="documents">
+<image rel="preload" src="images/documents.png" alt="documents" type="font/woff2" crossorigin="anonymous">
 
 Any device plugin file must implement a `DeviceClass`. You can find out more about this class in the example files, but essentially it represents all devices of a type or class. Lightning creates a list of these and compares them with those devices attached to a computer.
 
