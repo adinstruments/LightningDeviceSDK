@@ -1,3 +1,4 @@
+import { IDeviceProxyAPI } from 'public/device-api';
 import {
    IDeviceUIApi,
    IDeviceStreamApi,
@@ -23,7 +24,8 @@ export class DeviceUI implements IDeviceUIApi {
    describeStreamSettingsUI(
       settings: IDeviceStreamApi,
       deviceIndex: number,
-      deviceManager: IDeviceManagerApi
+      deviceManager: IDeviceManagerApi,
+      deviceProxy?: IDeviceProxyAPI
    ): IUIAreaApi {
       const out: IUIElementApi[] = [];
 

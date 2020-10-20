@@ -38,7 +38,7 @@ export const enum PayloadLengthBytes {
    // 8 Channel sample data: (8+ (1+number of active channels)*3*16)
    kEEG98 = 440 | 0,
    // 4 Channel sample data: (8+ (1+number of active channels)*3*33)
-   kEEG94 = 248 | 0,
+   kEEG94 = 503 | 0,
    kORN = 26 | 0,
    kEnv = 13 | 0,
    kCommandStatus = 14 | 0,
@@ -48,11 +48,13 @@ export const enum PayloadLengthBytes {
 // Actual sample data length (exlcude 8 bytes from PayloadLengthBytes)
 export const enum SampleLengthBytes {
    kEEG98 = 432 | 0,
-   kEEG94 = 240 | 0,
+   kEEG94 = 495 | 0,
    kORN = 18 | 0,
    kEnv = 5 | 0,
    kCommandStatus = 6 | 0
 }
+
+export const kMaxSizePacketType = PacketType.kEEG94;
 
 export function packetTypeToSize(type: PacketType) {
    switch (type) {
