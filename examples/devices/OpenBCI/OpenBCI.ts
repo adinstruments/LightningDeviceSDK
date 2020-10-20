@@ -60,7 +60,24 @@ function getDataFormat() {
    return ~~BlockDataFormat.k16BitBlockDataFormat;
 }
 
-const kDefaultSamplesPerSec = 250;
+const kSupportedSamplesPerSec = [250];
+
+export const kDefaultSamplesPerSecIndex = 0;
+export const kDefaultSamplesPerSec = kSupportedSamplesPerSec[kDefaultSamplesPerSecIndex];
+
+export function findClosestSupportedRateIndex(samplesPerSec: number) {
+   let result = kSupportedSamplesPerSec.findIndex((value) => value <= samplesPerSec);
+   if (result < 0) {
+      return kSupportedSamplesPerSec.length - 1;
+   }
+   return result;
+}
+
+export function findClosestSupportedRate(samplesPerSec: number) {
+   return kSupportedSamplesPerSec[findClosestSupportedRateIndex(samplesPerSec)];
+}
+
+
 const kChannelsPerADS1299 = 8;
 
 const kMinOutBufferLenSamples = 1024;
@@ -240,7 +257,9 @@ class StreamSettings implements IDeviceStreamApiImpl {
 
       this.samplesPerSec = new Setting(
          settingsData.samplesPerSec,
-         (setting: IDeviceSetting, newValue: DeviceValueType) => {
+         (setting: Setting, newValue: DeviceValueType) => {
+            //Coerce the setting's internal value to the supported rate before updating Quark
+            setting._value = findClosestSupportedRate(newValue as number);
             proxy.updateStreamSettings(streamIndex, this, {});
             return newValue;
          }
@@ -539,11 +558,11 @@ const kDefaultInputSettings: IDeviceInputSettingsSys = {
 
 const kDefaultRate: IDeviceSetting = {
    settingName: 'Rate',
-   value: kDefaultSamplesPerSec,
+   value: kSupportedSamplesPerSec[kDefaultSamplesPerSecIndex],
    options: [
       {
-         value: kDefaultSamplesPerSec,
-         display: kDefaultSamplesPerSec.toString() + ' Hz'
+         value: kSupportedSamplesPerSec[0],
+         display: kSupportedSamplesPerSec[0].toString() + ' Hz'
       }
    ]
 };
@@ -886,7 +905,7 @@ class ProxyDevice implements IProxyDevice {
     */
    setAllChannelsSamplesPerSec(samplesPerSec: number): boolean {
       for (const stream of this.settings.dataInStreams) {
-         (stream.samplesPerSec as any).value = samplesPerSec;
+         stream.samplesPerSec.value = findClosestSupportedRate(samplesPerSec);
       }
 
       return true;

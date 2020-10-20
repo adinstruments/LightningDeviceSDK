@@ -1,3 +1,4 @@
+import { IDeviceProxyAPI } from 'libs/quark';
 import {
    IDeviceUIApi,
    IDeviceStreamApi,
@@ -8,6 +9,8 @@ import {
 } from '../../../public/device-api';
 import { PluginFeatureTypes } from '../../../public/plugin-api';
 
+const serialSettingsClassGuid = 'e60ce0c8-b107-11ea-b3de-0242ac130004';
+
 /**
  * Expose a class that LabChart Lightning will use when evaluating what
  * User Interface to present to the user when configuring devices of this
@@ -16,8 +19,8 @@ import { PluginFeatureTypes } from '../../../public/plugin-api';
 export class DeviceUI implements IDeviceUIApi {
    name = 'SerialSettings UI';
    type: PluginFeatureTypes = 'Device UI';
-   matchesDevice(deviceDisplayName: string) {
-      return deviceDisplayName === 'SerialSettings';
+   matchesDevice(deviceClassGuid: string, deviceInternalName: string) {
+      return deviceClassGuid === serialSettingsClassGuid;
    }
 
    /**
@@ -31,7 +34,8 @@ export class DeviceUI implements IDeviceUIApi {
    describeStreamSettingsUI(
       settings: IDeviceStreamApi,
       deviceId: DeviceProxyId,
-      deviceManager: IDeviceManagerApi
+      deviceManager: IDeviceManagerApi,
+      deviceProxy?: IDeviceProxyAPI
    ): IUIAreaApi {
       // UI elements that will be shown in the signal sampling settings UI.
       // Returned from this function.

@@ -4,7 +4,8 @@ import {
    IDeviceManagerApi,
    IUIAreaApi,
    IUIElementApi,
-   DeviceProxyId
+   DeviceProxyId,
+   IDeviceProxyAPI
 } from '../../../public/device-api';
 import { PluginFeatureTypes } from '../../../public/plugin-api';
 
@@ -21,16 +22,17 @@ class SerialWithMappedInputsUI implements IDeviceUIApi {
    name = 'SerialWithMappedInputsUI';
 
    matchesDevice(
-      deviceDisplayName: string,
+      deviceClassGuid: string,
       deviceInternalName: string
    ): boolean {
-      return deviceDisplayName.startsWith('SerialWithMappedInputs');
+      return deviceClassGuid === 'c14ac086-b1e6-11ea-b3de-0242ac130004';
    }
 
    describeStreamSettingsUI(
       settings: IDeviceStreamApi,
       deviceId: DeviceProxyId,
-      deviceManager: IDeviceManagerApi
+      deviceManager: IDeviceManagerApi,
+      deviceProxy?: IDeviceProxyAPI
    ): IUIAreaApi {
       // UI elements that will be shown in the signal sampling settings UI.
       // Returned from this function.
