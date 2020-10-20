@@ -1,6 +1,6 @@
-import { PacketType, packetTypeToSize, SampleLengthBytes } from './utils';
+import { PacketType, packetTypeToSize, SampleLengthBytes, kMaxSizePacketType } from './utils';
 import { IDataSink, IDuplexStream } from '../../../public/device-api';
-import { kNumberEnvironmentSignals } from './settings';
+import { kNumberOfOrientationSignals, kNumberEnvironmentSignals } from './settings';
 
 const kFletcherSizeBytes = 4;
 
@@ -75,7 +75,16 @@ export class Parser {
    expectedPacketCount: number; // is one byte (0 - 255)
    unexpectedPacketCount: number; //store the last unexpected count so we can resynch
 
-   numberExgSignals: number;
+   numberExgSignals: number; //from physical device
+   numberExgSignalsFromSettings: number;
+
+   get firstOrientationInput() {
+      return this.numberExgSignals || 8;
+   }
+
+   get firstEnvironmentInput() {
+      return this.firstOrientationInput + kNumberOfOrientationSignals;
+   }
 
    //We use a buffer containing the last partial packet to handle cases where a packet spans more that one chunk
    lastBuf: BufferWithLen;
@@ -115,7 +124,7 @@ export class Parser {
       this.unexpectedPacketCount = 0;
 
       // The largest packets are those of 8 channel data
-      const maxPacketSizeBytes = packetTypeToSize(PacketType.kEEG98);
+      const maxPacketSizeBytes = packetTypeToSize(kMaxSizePacketType);
       this.lastBuf = new BufferWithLen(Buffer.alloc(maxPacketSizeBytes));
 
       //node streams default to 'utf8' encoding, which most devices won't understand.
@@ -163,9 +172,9 @@ export class Parser {
          } else {
             console.warn(
                'Received unexpected command status op ' +
-                  this.lastRecievedCommand.opCode +
-                  ', expected ' +
-                  this.lastSentCommand.opCode
+               this.lastRecievedCommand.opCode +
+               ', expected ' +
+               this.lastSentCommand.opCode
             );
          }
       }
@@ -173,8 +182,8 @@ export class Parser {
       if (!this.lastRecievedCommand && this.lastSentCommand) {
          console.warn(
             'Last command sent to MentaLab (' +
-               this.lastSentCommand.opCode +
-               ') was not acknowledged'
+            this.lastSentCommand.opCode +
+            ') was not acknowledged'
          );
       }
 
@@ -249,8 +258,9 @@ export class Parser {
       else console.warn(err);
    };
 
-   setProxyDevice(proxyDevice: IDataSink | null) {
+   setProxyDevice(proxyDevice: IDataSink | null, numberExgSignalsFromSettings: number = 0) {
       this.proxyDevice = proxyDevice;
+      this.numberExgSignalsFromSettings = numberExgSignalsFromSettings;
    }
 
    startSampling(): boolean {
@@ -368,7 +378,7 @@ export class Parser {
                   //need more data before we can process the packet
                   return i;
                }
-               const payloadStart = i + 2; // remove ID
+               const payloadStart = i;
                const payloadEnd = i + this.packetPayloadSize;
                if (!this.processPacketPayload(buffer.slice(i, payloadEnd))) {
                   i = payloadStart; //Start searching for a good packet!
@@ -617,39 +627,31 @@ export class Parser {
          return false;
       }
 
-      const environmentData: {
-         batteryPercentage: number;
-         light: number;
-         temperature: number;
-      } = {
-         batteryPercentage: NaN,
-         light: NaN,
-         temperature: NaN
-      };
+      if (!this.proxyDevice || !this.proxyDevice.inputToStream || !this.shouldWriteBytes()) return true;
 
-      environmentData.temperature = samples[0];
+      const inputToStream = this.proxyDevice.inputToStream;
+      const outStreamBuffers = this.proxyDevice.outStreamBuffers;
 
-      // magic numbers from MentaLab's packet.py file
-      environmentData.light = (1000 / 4095) * (samples[1] + (samples[2] << 8));
-      const batteryVoltage =
-         (16.8 / 6.8) * (1.8 / 2457) * (samples[3] + (samples[4] << 8));
-      environmentData.batteryPercentage = this.batteryPercentage(
-         batteryVoltage
-      );
+      let input = this.firstEnvironmentInput;
 
-      if (this.shouldWriteBytes() && this.proxyDevice) {
-         let index = 1;
-         const outStreamBuffers = this.proxyDevice.outStreamBuffers;
-         const outStreamBuffersLength = outStreamBuffers.length;
+      let buffer = outStreamBuffers[inputToStream[input++]];
+      if (buffer)
+         buffer.writeInt(samples[0]); //temperature byte
 
-         // last 3 items in outStreamBuffers are for env data
-         for (const value of Object.values(environmentData)) {
-            if (!Number.isNaN(value)) {
-               outStreamBuffers[outStreamBuffersLength - index].writeInt(value);
-            }
-            index++;
-         }
+      buffer = outStreamBuffers[inputToStream[input++]];
+      if (buffer) {
+         const light = (samples[1] + (samples[2] << 8));
+         buffer.writeInt(light);
       }
+
+      buffer = outStreamBuffers[inputToStream[input++]];
+      if (buffer) {
+         const batteryVoltage =
+            (16.8 / 6.8) * (1.8 / 2457) * (samples[3] + (samples[4] << 8));
+         const batteryPercentage = this.batteryPercentage(batteryVoltage);
+         buffer.writeInt(batteryPercentage);
+      }
+
       return true;
    }
 
@@ -662,7 +664,7 @@ export class Parser {
    processDataPacketPayload(data: Buffer) {
       const sampleLengthBytes =
          this.packetType === PacketType.kEEG98 ||
-         this.packetType === PacketType.kEEG98R
+            this.packetType === PacketType.kEEG98R
             ? SampleLengthBytes.kEEG98
             : SampleLengthBytes.kEEG94;
 
@@ -674,10 +676,14 @@ export class Parser {
       }
 
       // data is comprised of 16 samples over 8 or 4 channels
-      const kSamplesPerPacket = 16;
+      const kSamplesPerPacket =
+         this.packetType === PacketType.kEEG98 ||
+            this.packetType === PacketType.kEEG98R
+            ? 16
+            : 33;
       const kChannelCount =
          this.packetType === PacketType.kEEG98 ||
-         this.packetType === PacketType.kEEG98R
+            this.packetType === PacketType.kEEG98R
             ? 8
             : 4;
       const kStatusLengthBytes = 3;
@@ -686,23 +692,25 @@ export class Parser {
       let offset = 0;
       let channelMask = 0; // ads_mask in the docs
 
-      if (this.shouldWriteBytes() && this.proxyDevice) {
-         const outStreamBuffers = this.proxyDevice.outStreamBuffers;
-         for (let j = 0; j < kSamplesPerPacket; j++) {
-            channelMask = samples[offset];
-            offset += kStatusLengthBytes;
-            for (let i = 0; i < kChannelCount; i++) {
-               if (this.isStreamOn(channelMask, i)) {
-                  const reading = samples.readIntLE(offset, kSampleLengthBytes);
+      if (!this.proxyDevice || !this.proxyDevice.inputToStream || !this.shouldWriteBytes()) return true;
 
-                  // Just taking the high 16 bits. Despite the device supplying
-                  // a 24 bit sample the precision of the encoded number requires fewer bits.
-                  const int16Val = reading >> 8;
+      const inputToStream = this.proxyDevice.inputToStream;
+      const outStreamBuffers = this.proxyDevice.outStreamBuffers;
+      for (let j = 0; j < kSamplesPerPacket; j++) {
+         channelMask = samples[offset];
+         offset += kStatusLengthBytes;
+         for (let i = 0; i < kChannelCount; ++i) {
+            const buffer = outStreamBuffers[inputToStream[i]];
+            if (buffer && this.isStreamOn(channelMask, i)) {
+               const reading = samples.readIntLE(offset, kSampleLengthBytes);
 
-                  outStreamBuffers[i].writeInt(int16Val);
-               }
-               offset += kSampleLengthBytes;
+               // Just taking the high 16 bits. Despite the device supplying
+               // a 24 bit sample, the low 8 bits are mostly ADC noise.
+               const int16Val = reading >> 8;
+
+               buffer.writeInt(int16Val);
             }
+            offset += kSampleLengthBytes;
          }
       }
 
@@ -723,29 +731,21 @@ export class Parser {
          return false;
       }
 
+      if (!this.proxyDevice || !this.proxyDevice.inputToStream || !this.shouldWriteBytes()) return true;
+
+      const inputToStream = this.proxyDevice.inputToStream;
       const uint16Bytesize = 2;
-      const startingOrientationStreamIndex = this.numberExgSignals || 8;
 
-      let offset = 0;
+      const outStreamBuffers = this.proxyDevice.outStreamBuffers;
 
-      if (this.shouldWriteBytes() && this.proxyDevice) {
-         const outStreamBuffers = this.proxyDevice.outStreamBuffers;
-
-         const orientationEnd =
-            outStreamBuffers.length - kNumberEnvironmentSignals;
-         //despite the docs, temperature is not in the orientation packet
-         for (let i = startingOrientationStreamIndex; i < orientationEnd; i++) {
-            let value = samples.readUInt16LE(offset);
-
-            //The first mag signal needs to be flipped.
-            //Flipping it here to keep the units simple above
-            if (i === orientationEnd - 3) {
-               value = value *= -1;
-            }
-
-            outStreamBuffers[i].writeInt(value);
-            offset += uint16Bytesize;
-         }
+      //despite the docs, the temperature byte is not in the orientation packet!
+      let input = this.firstOrientationInput;
+      for (let offset = 0, end = input + kNumberOfOrientationSignals; input < end; ++input, offset += uint16Bytesize) {
+         let value = samples.readUInt16LE(offset);
+         if (offset === 12) value = -value; //MagX needs inversion so the same units can be used for all Mag inputs
+         const buffer = outStreamBuffers[inputToStream[input]];
+         if (buffer)
+            buffer.writeInt(value);
       }
 
       return true;
@@ -756,7 +756,7 @@ class BufferWithLen {
    constructor(
       public buf: Buffer,
       public len = 0 //we are not always using the full buffer.length
-   ) {}
+   ) { }
 
    setNewBuffer(buffer: Buffer) {
       this.buf = buffer;
