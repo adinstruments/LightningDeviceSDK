@@ -1,10 +1,10 @@
-import { IDeviceProxyAPI } from 'libs/quark';
 import {
    IDeviceUIApi,
    IDeviceStreamApi,
    IDeviceManagerApi,
    IUIAreaApi,
    IUIElementApi,
+   IDeviceProxyAPI,
    DeviceProxyId
 } from '../../../public/device-api';
 import { PluginFeatureTypes } from '../../../public/plugin-api';
