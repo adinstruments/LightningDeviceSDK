@@ -14,7 +14,7 @@ import {
    IDeviceManagerApi,
    IDeviceSettingsApi,
    HierarchyOfDeviceSettingsBase,
-   DeviceProxyId
+   DeviceProxyId, IDeviceProxyAPI
 } from './device-api';
 import { IPluginModuleFeature, ILcModel } from './plugin-api';
 
@@ -333,7 +333,7 @@ export interface IDeviceUICustomReact extends IDeviceUIElementBase {
    custom: (react: any) => JSX.Element;
 }
 
-export interface IDataPreviewApi extends ILcModel {}
+export interface IDataPreviewApi extends ILcModel { }
 
 export interface IDeviceUISignalPreview extends IDeviceUIElementBase {
    // Intended for internal use only.
@@ -429,16 +429,15 @@ export interface IJsDeviceUI {
     * implementation it will use to display information for a specific
     * device.
     *
-    * @param deviceDisplayName is the device name displayed in the
-    * Lightning user interface.
+    * @param deviceClassGuid is the device's class unique guid. 
     * @param deviceInternalName is the internal name of the device. This
-    * should be used if the device display name is not specific enough
+    * should be used if the device class guid is not specific enough
     * or device supports being renamed.
     *
     * @returns true if this class will provide the UI for the device.
     */
    matchesDevice: (
-      deviceDisplayName: string,
+      deviceClassGuid: string,
       deviceInternalName: string
    ) => boolean;
 
@@ -453,7 +452,8 @@ export interface IJsDeviceUI {
    describeStreamSettingsUI?: (
       streamSettings: IDeviceStreamApi,
       deviceId: DeviceProxyId,
-      deviceManager: IDeviceManagerApi
+      deviceManager: IDeviceManagerApi,
+      deviceProxy?: IDeviceProxyAPI
    ) => IUIAreaApi | undefined;
 
    /**
@@ -467,7 +467,8 @@ export interface IJsDeviceUI {
    describeDeviceSettingsUI?: (
       deviceSettings: IDeviceSettingsApi,
       deviceId: DeviceProxyId,
-      deviceManager: IDeviceManagerApi
+      deviceManager: IDeviceManagerApi,
+      deviceProxy?: IDeviceProxyAPI
    ) => IUIAreaApi | undefined;
 }
 
@@ -476,4 +477,4 @@ export interface IJsDeviceUI {
  *
  * @example export class MyDeviceSettingsUI implements IDeviceUIApi { ... }
  */
-export interface IDeviceUIApi extends IPluginModuleFeature, IJsDeviceUI {}
+export interface IDeviceUIApi extends IPluginModuleFeature, IJsDeviceUI { }
