@@ -37,15 +37,15 @@ import {
    TDeviceConnectionType,
    BlockDataFormat,
    OpenPhysicalDeviceDescriptor
-} from '../../public/device-api';
+} from '../../../public/device-api';
 
-import { Setting } from '../../public/device-settings';
+import { Setting } from '../../../public/device-settings';
 
-import { UnitsInfoImpl, UnitsInfo16Bit } from '../../public/device-units';
+import { UnitsInfoImpl, UnitsInfo16Bit } from '../../../public/device-units';
 
-import { DuplexStream } from '../../public/device-streams';
+import { DuplexStream } from '../../../public/device-streams';
 
-import { StreamRingBufferImpl } from '../../public/stream-ring-buffer';
+import { StreamRingBufferImpl } from '../../../public/stream-ring-buffer';
 
 // Imported libs set in getDeviceClass(libs) in module.exports below
 // obtained from quark-enums
@@ -155,8 +155,8 @@ export function resetgSampleCountForTesting() {
  * PhysicalDevice is a representation of the connected hardware device
  */
 export class PhysicalDevice implements OpenPhysicalDevice {
-   deviceName: string;
    serialNumber: string;
+   deviceName: string;
    deviceConnection: DuplexDeviceConnection;
    parser: Parser;
    numberOfChannels: number;
@@ -1111,7 +1111,7 @@ class ProxyDevice implements IProxyDevice {
 
    onSamplingStarted() {
       if (this.proxyDeviceSys)
-         this.proxyDeviceSys.onDeviceEvent(DeviceEvent.kDeviceStarted);
+         this.proxyDeviceSys.onDeviceEvent(DeviceEvent.kDeviceStarted, this.getDeviceName());
    }
 
    onSamplingStopped(errorMsg: string) {
