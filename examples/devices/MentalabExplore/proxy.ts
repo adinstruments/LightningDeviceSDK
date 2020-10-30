@@ -1,5 +1,4 @@
 import {
-   IProxyDevice,
    IDeviceProxySettingsSys,
    StreamRingBuffer,
    ProxyDeviceSys,
@@ -29,13 +28,13 @@ import {
    kEnvironmentSamplesPerSec,
    kNumberOfOrientationSignals,
    getStreamName,
-   kNumberOfOtherSignals,
    unitsFromPosFullScale,
    kSupportedEXGSamplesPerSec,
    findClosestSupportedRate,
    findClosestSupportedRateIndex,
    kAllEXGStreams,
-   kDefaultNumExGSignals, kNumberEnvironmentSignals
+   kDefaultNumExGSignals,
+   kNumberEnvironmentSignals
 } from './settings';
 import { PacketType } from './utils';
 
@@ -67,7 +66,7 @@ export class ProxyDevice implements IProxyDeviceImpl {
     */
    outStreamBuffers: StreamRingBuffer[];
 
-   inputToStream?: number[];  //mapping from device inputs to device output streams
+   inputToStream?: number[]; //mapping from device inputs to device output streams
 
    physicalDevice: PhysicalDevice | null;
    proxyDeviceSys: ProxyDeviceSys | null;
@@ -123,13 +122,14 @@ export class ProxyDevice implements IProxyDeviceImpl {
    }
 
    isOrientationStream(streamIndex: number) {
-      return streamIndex >= this.numberOfEXGStreams() &&
-         streamIndex < this.numberOfEXGStreams() + kNumberOfOrientationSignals;
+      return (
+         streamIndex >= this.numberOfEXGStreams() &&
+         streamIndex < this.numberOfEXGStreams() + kNumberOfOrientationSignals
+      );
    }
 
    streamToInput(streamIndex: number) {
-      if (!this.inputToStream)
-         return -1;
+      if (!this.inputToStream) return -1;
       return this.inputToStream.indexOf(streamIndex);
    }
 
@@ -145,19 +145,24 @@ export class ProxyDevice implements IProxyDeviceImpl {
 
       const nDeviceInputs = physicalDevice
          ? physicalDevice.getNumberOfAnalogStreams()
-         : kDefaultNumExGSignals + kNumberOfOrientationSignals + kNumberEnvironmentSignals;
+         : kDefaultNumExGSignals +
+           kNumberOfOrientationSignals +
+           kNumberEnvironmentSignals;
 
       const deviceSettingsIn = settingsDataIn as DeviceSettings;
-      const nSettingsEXGSignals = deviceSettingsIn ? deviceSettingsIn.numberExgSignals : nDeviceEXGInputs;
-
+      const nSettingsEXGSignals = deviceSettingsIn
+         ? deviceSettingsIn.numberExgSignals
+         : nDeviceEXGInputs;
 
       const defaultInputSettings = getDefaultSettings(this, nDeviceEXGInputs);
-      const settingsData = deviceSettingsIn ? deviceSettingsIn : defaultInputSettings;
+      const settingsData = deviceSettingsIn
+         ? deviceSettingsIn
+         : defaultInputSettings;
 
       this.settings = getDefaultSettings(this, nSettingsEXGSignals);
 
       this.settings.dataInStreams = [];
-      this.inputToStream = [];  //mapping from device inputs to device output streams
+      this.inputToStream = []; //mapping from device inputs to device output streams
 
       const defaultDisabledStreamSettings = getDefaultDisabledStreamSettings(
          this.settings,
@@ -166,24 +171,26 @@ export class ProxyDevice implements IProxyDeviceImpl {
 
       /**
        * Initialise inputToStream mapping
-       * Two combinations that are not one to one: 
+       * Two combinations that are not one to one:
        *    1. 8 (Exg) stream settings with 4 (Exg) input device - tell Quark to disable streams [4,8)
        *    2. 4 (Exg) stream settings with 8 (Exg) input device - tell parser to disable inputs [4,8)
-       * 
-       * The inputToStream lookup table needs to be the same length as the number of inputs on the current 
+       *
+       * The inputToStream lookup table needs to be the same length as the number of inputs on the current
        * device (16 or 20). Disabled inputs are marked by setting their inputToStream to -1.
-       * 
-      */
+       *
+       */
 
       let input = 0;
       for (let stream = 0; input < nDeviceEXGInputs; ++stream, ++input) {
-         if (stream < nSettingsEXGSignals)
-            this.inputToStream.push(stream);
-         else
-            this.inputToStream.push(-1); //case 2: tell parser to disable inputs [4,8)
+         if (stream < nSettingsEXGSignals) this.inputToStream.push(stream);
+         else this.inputToStream.push(-1); //case 2: tell parser to disable inputs [4,8)
       }
 
-      for (let stream = nSettingsEXGSignals; input < nDeviceInputs; ++stream, ++input) {
+      for (
+         let stream = nSettingsEXGSignals;
+         input < nDeviceInputs;
+         ++stream, ++input
+      ) {
          this.inputToStream.push(stream);
       }
 
@@ -191,9 +198,12 @@ export class ProxyDevice implements IProxyDeviceImpl {
          Ensure the settings have the correct number of `dataInStreams` for 
          the current physical device. This logic is complicated by the fact we fake up physical devices having different stream counts for testing purposes.
          */
-      for (let streamIndex = 0; streamIndex < settingsData.dataInStreams.length; ++streamIndex) {
-
-         let streamSettingsData = settingsData.dataInStreams[streamIndex];
+      for (
+         let streamIndex = 0;
+         streamIndex < settingsData.dataInStreams.length;
+         ++streamIndex
+      ) {
+         const streamSettingsData = settingsData.dataInStreams[streamIndex];
          const inputIndex = this.streamToInput(streamIndex);
 
          if (inputIndex < 0) {
@@ -205,7 +215,8 @@ export class ProxyDevice implements IProxyDeviceImpl {
                to a device having fewer inputs, re-enable the stream by default
                so it will sample with the new device.
             */
-            streamSettingsData.enabled = defaultInputSettings.dataInStreams[inputIndex].enabled;
+            streamSettingsData.enabled =
+               defaultInputSettings.dataInStreams[inputIndex].enabled;
          }
 
          const defaultStreamSettings =
@@ -279,8 +290,7 @@ export class ProxyDevice implements IProxyDeviceImpl {
                      this.applyStreamSettingsToHW(i, streamSettings),
                      restartAnySampling
                   );
-               else
-                  this.proxyDeviceSys.setupDataInStream(i); //disabled stream
+               else this.proxyDeviceSys.setupDataInStream(i); //disabled stream
             }
          } else if (streamSettingsIn) {
             this.proxyDeviceSys.setupDataInStream(
@@ -597,7 +607,7 @@ export class ProxyDevice implements IProxyDeviceImpl {
          if (stream && stream.enabled) {
             const nSamples = Math.max(
                bufferSizeInSecs *
-               ((stream.samplesPerSec as IDeviceSetting).value as number),
+                  ((stream.samplesPerSec as IDeviceSetting).value as number),
                kMinOutBufferLenSamples
             );
             this.outStreamBuffers.push(
@@ -811,15 +821,14 @@ class StreamSettings implements IDeviceStreamApi {
          //These share the same setting
          this.samplesPerSec = proxy.settings.deviceSamplesPerSec as Setting;
       } else if (proxy.isOrientationStream(streamIndex)) {
-         this.samplesPerSec = //kDefaultOrientationRate;
-            new Setting(
-               settingsData.samplesPerSec,
-               (setting: Setting, newValue: DeviceValueType) => {
-                  setting._value = kOrientationSamplesPerSec;
-                  proxy.updateStreamSettings(streamIndex, this, {});
-                  return newValue;
-               }
-            );
+         this.samplesPerSec = new Setting( //kDefaultOrientationRate;
+            settingsData.samplesPerSec,
+            (setting: Setting, newValue: DeviceValueType) => {
+               setting._value = kOrientationSamplesPerSec;
+               proxy.updateStreamSettings(streamIndex, this, {});
+               return newValue;
+            }
+         );
       } else {
          this.samplesPerSec = new Setting(
             settingsData.samplesPerSec,

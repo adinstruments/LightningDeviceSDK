@@ -23,7 +23,7 @@ import { kDeviceClassId, kTestOpenDeviceClassName, PacketType } from './utils';
  * PhysicalDevice objects of its class, as well as the ProxyDevice objects.
  */
 export class DeviceClass implements IDeviceClass {
-   constructor() { }
+   constructor() {}
 
    onError(err: Error) {
       console.error(err);
@@ -33,7 +33,7 @@ export class DeviceClass implements IDeviceClass {
     * Called when the app shuts down. Chance to release any resources acquired
     *  during this object's life.
     */
-   release() { }
+   release() {}
 
    /**
     * @returns the name of the class of devices, must be one word with no spaces, or use quotes.
@@ -113,7 +113,7 @@ export class DeviceClass implements IDeviceClass {
 
       const onPacketFound = (packetType: PacketType, buffer: unknown) => {
          if (packetType === PacketType.kDeviceInfo && !deviceInfoFound) {
-            console.log('Device info packet found');
+            if (kEnableLogging) console.log('Device info packet found');
             deviceInfoFound = true;
 
             packetParser.sendCommand(CommandPacketOp.setSampleRate, 1);
@@ -141,9 +141,9 @@ export class DeviceClass implements IDeviceClass {
       // Temporary proxy device is passed into the parser.
       const packetParser = new Parser(devStream, {
          outStreamBuffers: [],
-         onSamplingStarted: () => { },
-         onSamplingStopped: () => { },
-         onSamplingUpdate: () => { },
+         onSamplingStarted: () => {},
+         onSamplingStopped: () => {},
+         onSamplingUpdate: () => {},
          onPacket: onPacketFound,
          //This onError() handler will be replaced by the
          onError: (err: Error) => {
@@ -162,16 +162,21 @@ export class DeviceClass implements IDeviceClass {
       availablePhysDevices: OpenPhysicalDeviceDescriptor[]
    ): number {
       //Find devices of the same type
-      const sameType = availablePhysDevices.filter((it) => it.deviceType === descriptor.deviceType);
+      const sameType = availablePhysDevices.filter(
+         (it) => it.deviceType === descriptor.deviceType
+      );
 
       //First check for exact match
-      const index = sameType.findIndex(it => it.deviceId === descriptor.deviceId);
-      if (index !== -1)
-         return index;
+      const index = sameType.findIndex(
+         (it) => it.deviceId === descriptor.deviceId
+      );
+      if (index !== -1) return index;
 
       //Find device of same type (if possible) with closest number of inputs
       const available = sameType.length ? sameType : availablePhysDevices;
-      const deltaNInputs = available.map((it, index) => { return { diff: descriptor.numInputs - it.numInputs, index }; });
+      const deltaNInputs = available.map((it, index) => {
+         return { diff: descriptor.numInputs - it.numInputs, index };
+      });
       deltaNInputs.sort((l, r) => Math.abs(l.diff - r.diff));
       return deltaNInputs.length ? deltaNInputs[0].index : -1;
    }

@@ -28,7 +28,7 @@ export class DeviceUI implements IDeviceUIApi {
     * rate / range settings for this device.
     *
     * @param streamSettings settings for the current stream within the recording.
-    * @param deviceId identifier for the stream's device within the recording.
+    * @param deviceIndex 0-based index of the stream's device within the recording.
     * @param deviceManager Reference to the current device manager.
     */
    describeStreamSettingsUI(

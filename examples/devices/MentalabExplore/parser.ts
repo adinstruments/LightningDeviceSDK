@@ -1,6 +1,12 @@
-import { PacketType, packetTypeToSize, SampleLengthBytes, kMaxSizePacketType } from './utils';
+import {
+   PacketType,
+   packetTypeToSize,
+   SampleLengthBytes,
+   kMaxSizePacketType
+} from './utils';
 import { IDataSink, IDuplexStream } from '../../../public/device-api';
-import { kNumberOfOrientationSignals, kNumberEnvironmentSignals } from './settings';
+import { kNumberOfOrientationSignals } from './settings';
+import { kEnableLogging } from './enableLogging';
 
 const kFletcherSizeBytes = 4;
 
@@ -170,21 +176,23 @@ export class Parser {
                   this.lastSentCommand.opCode
                );
          } else {
-            console.warn(
-               'Received unexpected command status op ' +
-               this.lastRecievedCommand.opCode +
-               ', expected ' +
-               this.lastSentCommand.opCode
-            );
+            if (kEnableLogging)
+               console.warn(
+                  'Received unexpected command status op ' +
+                     this.lastRecievedCommand.opCode +
+                     ', expected ' +
+                     this.lastSentCommand.opCode
+               );
          }
       }
 
       if (!this.lastRecievedCommand && this.lastSentCommand) {
-         console.warn(
-            'Last command sent to MentaLab (' +
-            this.lastSentCommand.opCode +
-            ') was not acknowledged'
-         );
+         if (kEnableLogging)
+            console.warn(
+               'Last command sent to MentaLab (' +
+                  this.lastSentCommand.opCode +
+                  ') was not acknowledged'
+            );
       }
 
       if (this.acknowledgementTimeout) {
@@ -258,7 +266,10 @@ export class Parser {
       else console.warn(err);
    };
 
-   setProxyDevice(proxyDevice: IDataSink | null, numberExgSignalsFromSettings: number = 0) {
+   setProxyDevice(
+      proxyDevice: IDataSink | null,
+      numberExgSignalsFromSettings = 0
+   ) {
       this.proxyDevice = proxyDevice;
       this.numberExgSignalsFromSettings = numberExgSignalsFromSettings;
    }
@@ -292,7 +303,8 @@ export class Parser {
                if (byte === kFletcherAF) {
                   this.parserState = ParserState.k1FletcherByte;
                } else {
-                  console.log('Unexpected packets: ' + byte);
+                  if (kEnableLogging)
+                     console.log('Unexpected packets: ' + byte);
                }
                break;
             case ParserState.k1FletcherByte:
@@ -627,7 +639,12 @@ export class Parser {
          return false;
       }
 
-      if (!this.proxyDevice || !this.proxyDevice.inputToStream || !this.shouldWriteBytes()) return true;
+      if (
+         !this.proxyDevice ||
+         !this.proxyDevice.inputToStream ||
+         !this.shouldWriteBytes()
+      )
+         return true;
 
       const inputToStream = this.proxyDevice.inputToStream;
       const outStreamBuffers = this.proxyDevice.outStreamBuffers;
@@ -635,12 +652,11 @@ export class Parser {
       let input = this.firstEnvironmentInput;
 
       let buffer = outStreamBuffers[inputToStream[input++]];
-      if (buffer)
-         buffer.writeInt(samples[0]); //temperature byte
+      if (buffer) buffer.writeInt(samples[0]); //temperature byte
 
       buffer = outStreamBuffers[inputToStream[input++]];
       if (buffer) {
-         const light = (samples[1] + (samples[2] << 8));
+         const light = samples[1] + (samples[2] << 8);
          buffer.writeInt(light);
       }
 
@@ -664,7 +680,7 @@ export class Parser {
    processDataPacketPayload(data: Buffer) {
       const sampleLengthBytes =
          this.packetType === PacketType.kEEG98 ||
-            this.packetType === PacketType.kEEG98R
+         this.packetType === PacketType.kEEG98R
             ? SampleLengthBytes.kEEG98
             : SampleLengthBytes.kEEG94;
 
@@ -678,12 +694,12 @@ export class Parser {
       // data is comprised of 16 samples over 8 or 4 channels
       const kSamplesPerPacket =
          this.packetType === PacketType.kEEG98 ||
-            this.packetType === PacketType.kEEG98R
+         this.packetType === PacketType.kEEG98R
             ? 16
             : 33;
       const kChannelCount =
          this.packetType === PacketType.kEEG98 ||
-            this.packetType === PacketType.kEEG98R
+         this.packetType === PacketType.kEEG98R
             ? 8
             : 4;
       const kStatusLengthBytes = 3;
@@ -692,7 +708,12 @@ export class Parser {
       let offset = 0;
       let channelMask = 0; // ads_mask in the docs
 
-      if (!this.proxyDevice || !this.proxyDevice.inputToStream || !this.shouldWriteBytes()) return true;
+      if (
+         !this.proxyDevice ||
+         !this.proxyDevice.inputToStream ||
+         !this.shouldWriteBytes()
+      )
+         return true;
 
       const inputToStream = this.proxyDevice.inputToStream;
       const outStreamBuffers = this.proxyDevice.outStreamBuffers;
@@ -731,7 +752,12 @@ export class Parser {
          return false;
       }
 
-      if (!this.proxyDevice || !this.proxyDevice.inputToStream || !this.shouldWriteBytes()) return true;
+      if (
+         !this.proxyDevice ||
+         !this.proxyDevice.inputToStream ||
+         !this.shouldWriteBytes()
+      )
+         return true;
 
       const inputToStream = this.proxyDevice.inputToStream;
       const uint16Bytesize = 2;
@@ -740,12 +766,15 @@ export class Parser {
 
       //despite the docs, the temperature byte is not in the orientation packet!
       let input = this.firstOrientationInput;
-      for (let offset = 0, end = input + kNumberOfOrientationSignals; input < end; ++input, offset += uint16Bytesize) {
+      for (
+         let offset = 0, end = input + kNumberOfOrientationSignals;
+         input < end;
+         ++input, offset += uint16Bytesize
+      ) {
          let value = samples.readUInt16LE(offset);
          if (offset === 12) value = -value; //MagX needs inversion so the same units can be used for all Mag inputs
          const buffer = outStreamBuffers[inputToStream[input]];
-         if (buffer)
-            buffer.writeInt(value);
+         if (buffer) buffer.writeInt(value);
       }
 
       return true;
@@ -756,7 +785,7 @@ class BufferWithLen {
    constructor(
       public buf: Buffer,
       public len = 0 //we are not always using the full buffer.length
-   ) { }
+   ) {}
 
    setNewBuffer(buffer: Buffer) {
       this.buf = buffer;
