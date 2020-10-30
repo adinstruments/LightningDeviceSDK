@@ -65,7 +65,8 @@ export class YourDeviceUI implements IDeviceUIApi {
    describeDeviceSettingsUI?: (
       deviceSettings: IDeviceSettingsApi,
       deviceIndex: number,
-      deviceManager: IDeviceManagerApi
+      deviceManager: IDeviceManagerApi,
+      deviceProxy?: IDeviceProxyAPI
    ) => IUIAreaApi | undefined;
 
    // Returns a description of the UI area to show when the user configures
@@ -73,7 +74,8 @@ export class YourDeviceUI implements IDeviceUIApi {
    describeStreamSettingsUI(
       settings: IDeviceStreamSettingsApi,
       deviceIndex: number,
-      deviceManager: IDeviceManagerApi
+      deviceManager: IDeviceManagerApi,
+      deviceProxy?: IDeviceProxyAPI
    ): IUIAreaApi {
       ...
    }

@@ -1,28 +1,32 @@
+import { IDeviceProxyAPI } from 'public/device-api';
 import {
    IDeviceUIApi,
    IDeviceStreamApi,
    IDeviceManagerApi,
    IUIAreaApi,
-   IUIElementApi
-} from '../../public/device-api';
-import { PluginFeatureTypes } from '../../public/plugin-api';
+   IUIElementApi,
+   DeviceProxyId
+} from '../../../public/device-api';
+import { PluginFeatureTypes } from '../../../public/plugin-api';
 
 export class DeviceUI implements IDeviceUIApi {
    name = 'SerialSettings UI';
    type: PluginFeatureTypes = 'Device UI';
-   deviceClassName = 'SerialSettings';
+   matchesDevice(deviceDisplayName: string) {
+      return deviceDisplayName === 'SerialSettings';
+   }
 
    /**
     * Defines the user interface elements that will be used to adjust basic rate / range settings
     * for this device.
     *
     * @param streamSettings settings for the current stream within the recording.
-    * @param deviceIndex 0-based index of the stream's device within the recording.
+    * @param deviceId identifier for the stream's device within the recording.
     * @param deviceManager Reference to the current device manager.
     */
    describeStreamSettingsUI(
       settings: IDeviceStreamApi,
-      deviceIndex: number,
+      deviceId: DeviceProxyId,
       deviceManager: IDeviceManagerApi
    ): IUIAreaApi {
       const out: IUIElementApi[] = [];
@@ -31,7 +35,7 @@ export class DeviceUI implements IDeviceUIApi {
          type: 'header',
          title: 'SerialSettings Device',
          subtitle: `${deviceManager.deviceDisplayName(
-            deviceIndex
+            deviceId
          )}, ${settings.streamName || 'Input'}`
       });
 
