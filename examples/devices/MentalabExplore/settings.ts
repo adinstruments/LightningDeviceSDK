@@ -66,7 +66,7 @@ export function findClosestSupportedRateIndex(samplesPerSec: number) {
    //Assumes kSupportedEXGSamplesPerSec is in descending order. If there is no exact match
    //use the closest rate < samplesPerSec.
    const result = kSupportedEXGSamplesPerSec.findIndex(
-      value => value <= samplesPerSec
+      (value) => value <= samplesPerSec
    );
    if (result < 0) {
       return kSupportedEXGSamplesPerSec.length - 1;
@@ -163,6 +163,38 @@ const kUnitsForGain1 = new UnitsInfo16Bit(
    -400
 );
 
+const kUnitsForGain2 = new UnitsInfo16Bit(
+   'V', //unit name
+   UnitPrefix.kMilli, //unit prefix
+   kDefaultDecimalPlaces,
+   100,
+   -100
+);
+
+const kUnitsForGain3 = new UnitsInfo16Bit(
+   'V', //unit name
+   UnitPrefix.kMilli, //unit prefix
+   kDefaultDecimalPlaces,
+   50,
+   -50
+);
+
+const kUnitsForGain4 = new UnitsInfo16Bit(
+   'V', //unit name
+   UnitPrefix.kMicro, //unit prefix
+   kDefaultDecimalPlaces,
+   25000,
+   -25000
+);
+
+const kUnitsForGain5 = new UnitsInfo16Bit(
+   'V', //unit name
+   UnitPrefix.kMicro, //unit prefix
+   kDefaultDecimalPlaces,
+   12500,
+   -12500
+);
+
 const kUnitsForAcc = new UnitsInfo16Bit(
    ' mG', //unit name
    UnitPrefix.kNoPrefix, //unit prefix
@@ -193,10 +225,10 @@ const kUnitsForTemp = new UnitsInfoImpl(
    1,
    255, //Max in prefixed units
    0xff, //Max ADC
-   0,  //Min in prefixed units.
-   0,  //Min in ADC value.
+   0, //Min in prefixed units.
+   0, //Min in ADC value.
    255, //110, //Max valid
-   0    //Min valid
+   0 //Min valid
 );
 
 const kUnitsForLight = new UnitsInfoImpl(
@@ -205,8 +237,8 @@ const kUnitsForLight = new UnitsInfoImpl(
    3,
    1000, //100000, Max in prefixed units. Direct sunlight is 100000. https://en.wikipedia.org/wiki/Lux
    0x0fff, // Max in ADC values
-   0,       //Min in prefixed units.
-   0,       //Min in ADC value.
+   0, //Min in prefixed units.
+   0, //Min in ADC value.
    0x0fff, //100000,  //Max valid
    0
 );
@@ -227,6 +259,14 @@ export function unitsFromPosFullScale(posFullScale: number) {
    switch (posFullScale) {
       case kUnitsForGain1.maxInPrefixedUnits:
          return kUnitsForGain1;
+      case kUnitsForGain2.maxInPrefixedUnits:
+         return kUnitsForGain2;
+      case kUnitsForGain3.maxInPrefixedUnits:
+         return kUnitsForGain3;
+      case kUnitsForGain4.maxInPrefixedUnits:
+         return kUnitsForGain4;
+      case kUnitsForGain5.maxInPrefixedUnits:
+         return kUnitsForGain5;
       case kUnitsForAcc.maxInPrefixedUnits:
          return kUnitsForAcc;
       case kUnitsForGyro.maxInPrefixedUnits:
@@ -267,12 +307,6 @@ export class DeviceSettings implements IDeviceProxySettingsSys {
             return newValue;
          }
       );
-
-      // this.dataInStreams = kStreamNames.slice(0, nStreams).map(() => ({
-      //    enabled: kDefaultEnabled,
-      //    inputSettings: kDefaultInputSettings,
-      //    samplesPerSec: this.deviceSamplesPerSec
-      // }));
 
       this.dataInStreams = getDataInStreams(this, this.numberExgSignals);
    }
@@ -376,6 +410,37 @@ export function getDefaultSettings(
  * Implements {IDeviceInputSettingsSys}
  */
 function getInputSettings(unitsInfo: UnitsInfo16Bit) {
+   if (unitsInfo.maxInPrefixedUnits === kUnitsForGain1.maxInPrefixedUnits) {
+      return {
+         range: {
+            settingName: 'Range',
+            value: kUnitsForGain1.maxInPrefixedUnits,
+            options: [
+               {
+                  value: kUnitsForGain1.maxInPrefixedUnits,
+                  display: kUnitsForGain1.rangeDisplayString
+               },
+               {
+                  value: kUnitsForGain2.maxInPrefixedUnits,
+                  display: kUnitsForGain2.rangeDisplayString
+               },
+               {
+                  value: kUnitsForGain3.maxInPrefixedUnits,
+                  display: kUnitsForGain3.rangeDisplayString
+               },
+               {
+                  value: kUnitsForGain4.maxInPrefixedUnits,
+                  display: kUnitsForGain4.rangeDisplayString
+               },
+               {
+                  value: kUnitsForGain5.maxInPrefixedUnits,
+                  display: kUnitsForGain5.rangeDisplayString
+               }
+            ]
+         }
+      };
+   }
+
    return {
       range: {
          settingName: 'Range',

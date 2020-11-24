@@ -84,6 +84,8 @@ export class Parser {
    numberExgSignals: number; //from physical device
    numberExgSignalsFromSettings: number;
 
+   digitGainShiftBits: number[];
+
    get firstOrientationInput() {
       return this.numberExgSignals || 8;
    }
@@ -139,6 +141,16 @@ export class Parser {
       this.inStream.setDefaultEncoding('binary');
       this.inStream.on('error', this.onError);
       this.inStream.on('data', this.onData); //switches stream into flowing mode
+   }
+
+   setGain(streamIndex: number, range: number) {
+      //range is in mV
+      if (range === 400) this.digitGainShiftBits[streamIndex] = 0;
+      else if (range === 100) this.digitGainShiftBits[streamIndex] = 2;
+      else if (range === 50) this.digitGainShiftBits[streamIndex] = 3;
+      else if (range === 25000) this.digitGainShiftBits[streamIndex] = 4;
+      else if (range === 12500) this.digitGainShiftBits[streamIndex] = 5;
+      else this.digitGainShiftBits[streamIndex] = 0; //unknown gain!
    }
 
    get32BitTimestampNow() {
@@ -272,6 +284,7 @@ export class Parser {
    ) {
       this.proxyDevice = proxyDevice;
       this.numberExgSignalsFromSettings = numberExgSignalsFromSettings;
+      this.digitGainShiftBits = new Array(numberExgSignalsFromSettings).fill(0);
    }
 
    startSampling(): boolean {
@@ -721,13 +734,21 @@ export class Parser {
          channelMask = samples[offset];
          offset += kStatusLengthBytes;
          for (let i = 0; i < kChannelCount; ++i) {
-            const buffer = outStreamBuffers[inputToStream[i]];
+            const streamIdx = inputToStream[i];
+            const buffer = outStreamBuffers[streamIdx];
             if (buffer && this.isStreamOn(channelMask, i)) {
-               const reading = samples.readIntLE(offset, kSampleLengthBytes);
+               let reading = samples.readIntLE(offset, kSampleLengthBytes);
 
-               // Just taking the high 16 bits. Despite the device supplying
+               const shiftBits = this.digitGainShiftBits[streamIdx];
+
+               // Just taking 16 bits for now. Despite the device supplying
                // a 24 bit sample, the low 8 bits are mostly ADC noise.
-               const int16Val = reading >> 8;
+               let int16Val = reading >> (8 - shiftBits);
+
+               const limit = 0x007fffff >> shiftBits;
+               if (reading > limit) int16Val = 0x8000;
+               //Out of range
+               else if (reading < -limit) int16Val = 0x8000; //Out of range
 
                buffer.writeInt(int16Val);
             }
