@@ -351,6 +351,14 @@ export class ProxyDevice implements IProxyDeviceImpl {
                   kSupportedEXGSamplesPerSec.length - rateIndex
                );
             }
+
+            // Set gain on parser
+            if (streamIndex < this.numberOfEXGStreams()) {
+               this.parser.setGain(
+                  streamIndex,
+                  streamSettings.inputSettings.range.asNumber
+               );
+            }
          }
       };
    }
