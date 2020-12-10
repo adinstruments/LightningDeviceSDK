@@ -7,11 +7,41 @@ export class TimePoint {
    remoteTimeTick: TInt64;
    localPostTimeTick: TInt64;
 
-   constructor() {
+   constructor(other?: TimePoint) {
       this.localPreTimeTick = new Int32Array(2);
       this.remoteTimeTick = new Int32Array(2);
       this.localPostTimeTick = new Int32Array(2);
+      if (other) {
+         this.localPreTimeTick.set(other.localPreTimeTick);
+         this.localPostTimeTick.set(other.localPostTimeTick);
+         this.remoteTimeTick.set(other.remoteTimeTick);
+      }
+      //this.latestUSBFrame = 0xffff; //I.e. 16 bit -1, which is not a valid USB Frame number
    }
+}
+
+export class USBTimePoint extends TimePoint {
+   remoteUSBSOFTimeTick: TInt64;
+   latestUSBFrame: number;
+
+   constructor(other?: USBTimePoint | TimePoint) {
+      super(other);
+
+      this.remoteUSBSOFTimeTick = new Int32Array(2);
+      this.latestUSBFrame = -1;
+
+      if (other && isUSBTimePoint(other)) {
+         this.remoteUSBSOFTimeTick.set(other.remoteUSBSOFTimeTick);
+         this.latestUSBFrame = other.latestUSBFrame;
+      }
+   }
+   //this.latestUSBFrame = 0xffff; //I.e. 16 bit -1, which is not a valid USB Frame number
+}
+
+export function isUSBTimePoint(
+   timePoint: TimePoint | USBTimePoint
+): timePoint is USBTimePoint {
+   return (timePoint as USBTimePoint).latestUSBFrame !== undefined;
 }
 
 export class FirstSampleRemoteTime {
@@ -24,12 +54,34 @@ export class FirstSampleRemoteTime {
 
 export class Rational {
    //numerator and denominator should be integers
-   constructor(public numerator: number, public denominator: number) { }
+   constructor(public numerator: number, public denominator: number) {}
+}
+
+//Shared between Typescript and C++ (Quark and device firmware)
+export enum ADIDeviceSynchModes {
+   kDeviceSynchNone = 0 | 0,
+   kDeviceSyncRoundTrip = 1 | 0,
+   kDeviceSyncUSBFrameTimes = 2 | 0,
+   kDeviceSynchUSBLocked = 4 | 0
+}
+
+//Form of JSON version/capabilities returned from device firmware in
+//response to a version request command.
+export interface IDeviceVersionInfo {
+   deviceClass: string;
+   deviceName?: string;
+   version: string;
+   numberOfChannels?: number;
+   serialNumber?: string;
+   deviceSynchModes?: ADIDeviceSynchModes;
 }
 
 //Shared between C++ and Typescript: see public/device-api.ts and libs/quark-sys/libs/QuarkCOMInterfaces/IADIDeviceTimeAsynch.h
 export enum ADITimePointInfoFlags {
-   kTPInfoDefault = 0 | 0
+   kTPInfoDefault = 0 | 0,
+   kDeviceSyncRoundTrip = 1 | 0,
+   kDeviceSyncUSBFrameTimes = 2 | 0,
+   kDeviceSynchUSBLocked = 4 | 0
 }
 
 export class TimePointInfo {
@@ -44,7 +96,7 @@ export class TimePointInfo {
       public remoteTicksValidBits: number,
 
       public flags: ADITimePointInfoFlags = ADITimePointInfoFlags.kTPInfoDefault
-   ) { }
+   ) {}
 }
 export * from './device-ui-api';
 
@@ -149,6 +201,9 @@ export function proxyIdsAreEqual(a: DeviceProxyId, b: DeviceProxyId): boolean {
 export interface IDeviceProxySettingsSys extends HierarchyOfDeviceSettingsBase {
    version: number;
    dataInStreams: IDeviceStreamApi[];
+
+   //Used if the all the streams with a variable sample rate have to sample at the same rate.
+   deviceSamplesPerSec?: IDeviceSetting;
 }
 
 export type HierarchyOfDeviceSettings = { [key: string]: DeviceSettingsValue };
@@ -264,6 +319,10 @@ export interface IDeviceStreamApi extends HierarchyOfDeviceSettingsBase {
 
    //isEnabled: boolean; //AKA this.enabled.value
 
+   //Optional: index within this device of the input mapped to this stream.
+   //Defaults to a 1:1 stream to input mapping within the device
+   inputIndex?: number;
+
    /**
     * Optional setting for the index of physical input produced by the device to
     * be recorded into this stream.
@@ -283,7 +342,7 @@ export interface IDeviceStreamApiImpl extends IDeviceStreamApi {
    isEnabled: boolean; //getter returning this.enabled.value
 }
 
-export interface IDeviceSettingsApi extends HierarchyOfDeviceSettingsBase { }
+export interface IDeviceSettingsApi extends HierarchyOfDeviceSettingsBase {}
 
 export interface IDeviceInputSettingsSys {
    range: IDeviceSetting;
@@ -425,8 +484,8 @@ export interface ProxyDeviceSys {
    //    samplesPerSec: number, format: BlockDataFormat, unitsInfo: UnitsInfo): void;
    setupDataInStream(
       streamInDevice: number /*inputIndex: number,*/,
-      settings: IDeviceStreamApi,
-      configuration: Partial<IDeviceStreamConfiguration>,
+      settings?: IDeviceStreamApi,
+      configuration?: Partial<IDeviceStreamConfiguration>,
       callback?: (error: Error | null, type: SysStreamEventType) => void,
       restartAnySampling?: boolean
    ): void;
@@ -449,10 +508,12 @@ export interface ProxyDeviceSys {
 
    onRemoteTimeEvent(
       error: Error | null,
-      timePoint: TimePoint | FirstSampleRemoteTime | null
+      timePoint: TimePoint | FirstSampleRemoteTime | USBTimePoint | null
    ): void;
 }
 
+//Data stream configuration information Quark looks for in the
+//configuration parameter passed to ProxyDeviceSys.setupDataInStream()
 export interface IDeviceStreamConfiguration {
    dataFormat: BlockDataFormat;
    unitsInfo: UnitsInfo;
@@ -513,7 +574,7 @@ export enum DeviceEvent {
    kDeviceStartSamplingWarning = 4 | 0,
    kDeviceStartSamplingUserQuery = 5 | 0,
    kDeviceManagerError = 6 | 0,
-   kDeviceEventNoUI = 7 | 0 //e.g. adding annotations with displaying popup
+   kDeviceEvent = 7 | 0 //e.g. adding annotations without displaying popup
 }
 
 //see /libs/quark-sys\libs/QuarkCOMInterfaces/IOpenDeviceConnection.h
@@ -528,7 +589,9 @@ export enum TMessageSeverity {
 //see /libs/quark-sys\libs/QuarkCOMInterfaces/IOpenDeviceConnection.h
 export enum TMessageFlags {
    kMessageFlagsNil = 0 | 0,
-   kMessageAddAnotation = 0x80000000 | 0
+   kMessageAddAnotation = 0x80000000 | 0,
+   kMessageError = 0x40000000 | 0,
+   kMessageQueryStop = 0x20000000 | 0
 }
 
 export enum MetaDataColors {
@@ -594,6 +657,34 @@ export interface IDuplexStream extends IWritable {
 
 export enum SysStreamEventType {
    kApplyStreamSettingsToHardware = 0 | 0
+}
+
+export interface IDeviceProxyAPI {
+   /**
+    * Invokes an arbitrary function on the JS ProxyDevice on the devices thread.
+    * This is a general mechanism whereby user actions done
+    * on the main (UI) thread can be applied down to the device script.
+    *
+    * @param functionName Name of the function to call
+    * @param functionArgJson e.g. { type: "HCU" }
+    * @param callback is invoked once the function call completes.
+    */
+
+   /**
+    * Invokes an arbitrary function on the JS ProxyDevice on the devices thread.
+    * This is a general mechanism whereby user actions done
+    * on the main (UI) thread can be applied down to the device script.
+    *
+    * @param functionName Name of the function to call
+    * @param functionArgJson e.g. { type: "HCU" }
+    *
+    * @returns a javascript object the function may have returned, otherwise null.
+    */
+   callFunction(
+      functionName: string,
+      functionArgJson: string,
+      checkExistsOnly?: boolean
+   ): Promise<Record<string, any> | null>;
 }
 
 export interface IDeviceManagerApi {
@@ -665,6 +756,7 @@ export interface IDeviceManagerApi {
    ): void;
 
    /**
+    * Deprecated! Use the simpler and more general IDeviceProxyAPI.callFunction() instead!
     * Invokes an arbitrary function somewhere within the device manager settings
     * on the devices thread. This is the general mechanism whereby user actions done
     * on the main (UI) thread are applied down to the device hardware.
@@ -687,6 +779,8 @@ export interface IDeviceManagerApi {
          | { type: 'device'; deviceId: DeviceProxyId }
          | { type: 'stream'; deviceId: DeviceProxyId; streamIndex: number }
    ): string;
+
+   proxyFromId(deviceId: DeviceProxyId): IDeviceProxyAPI;
 }
 
 export interface IDataSink {
@@ -697,10 +791,11 @@ export interface IDataSink {
    onSamplingStopped(errorMsg: string): void;
    onRemoteTimeEvent?(
       error: Error | null,
-      timePoint: TimePoint | FirstSampleRemoteTime | null
+      timePoint: TimePoint | FirstSampleRemoteTime | USBTimePoint | null
    ): void;
    onPacket?(packetType: unknown, buffer: unknown): void;
    onError(err: Error): void;
+   inputToStream?: number[]; //mapping from device inputs to device output streams
 }
 
 //The JS part of the ProxyDevice called from Quark

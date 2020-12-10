@@ -7,9 +7,11 @@
 import {
    IDuplexStream,
    IDataSink,
+   TInt64,
    TimePoint,
+   USBTimePoint,
    FirstSampleRemoteTime,
-   TInt64
+   isUSBTimePoint
 } from './device-api';
 //import { assert } from 'libs/utility/assert';
 
@@ -23,7 +25,8 @@ const enum PacketType {
    kData = 1 | 0,
    kTime = 2 | 0,
    kFirstSampleTime = 3 | 0,
-   kMediumData = 4 | 0
+   kMediumData = 4 | 0,
+   kUSBFrameTIme = 5 | 0
 }
 
 //Smallest data packet, used for low rate sampling. One point is the set of
@@ -64,6 +67,8 @@ function packetTypeToSize(type: PacketType, nADCChannels: number) {
             kPacketHeaderWithNumber +
             kPointsPerMediumSizeDataPacket * nADCChannels * kSampleSizeBytes
          );
+      case PacketType.kUSBFrameTIme:
+         return kPacketHeaderWithNumber + 1 + 4 + 2 + 4; //request number + 32 bit clock tick + 16 bit USB frame number + 32 bit clock tick at last frame
    }
    return 0;
 }
@@ -72,7 +77,7 @@ class BufferWithLen {
    constructor(
       public buf: Buffer,
       public len = 0 //we are not always using the full buffer.length
-   ) { }
+   ) {}
 
    setNewBuffer(buffer: Buffer) {
       this.buf = buffer;
@@ -175,9 +180,9 @@ export class Parser {
       ]);
       this.expectedTimeRequestNumber = this.getRemoteTimeCommand[1];
 
-      const maxPacketSizeBytes = packetTypeToSize(
-         PacketType.kMediumData,
-         this.nADCChannels
+      const maxPacketSizeBytes = Math.max(
+         packetTypeToSize(PacketType.kMediumData, this.nADCChannels),
+         packetTypeToSize(PacketType.kUSBFrameTIme, this.nADCChannels)
       );
       this.lastBuf = new BufferWithLen(Buffer.alloc(maxPacketSizeBytes));
 
@@ -219,8 +224,7 @@ export class Parser {
    onError = (err: Error) => {
       this.lastError = err.message;
       if (this.proxyDevice) this.proxyDevice.onError(err);
-      else
-         console.warn(err);
+      else console.warn(err);
    };
 
    setProxyDevice(proxyDevice: IDataSink | null) {
@@ -298,6 +302,9 @@ export class Parser {
                         break;
                      case 0x46: //'F'
                         this.packetType = PacketType.kFirstSampleTime;
+                        break;
+                     case 0x4c: //'L'
+                        this.packetType = PacketType.kUSBFrameTIme;
                         break;
                      default:
                         this.packetType = PacketType.kNotFound;
@@ -428,6 +435,9 @@ export class Parser {
                kPointsPerMediumSizeDataPacket
             );
             break;
+         case PacketType.kUSBFrameTIme:
+            ok = this.processTimePacketPayload(data);
+            break;
          default:
             console.error(
                'processPacketPayLoad: unknown packet type: ',
@@ -446,7 +456,7 @@ export class Parser {
    }
 
    //returns true if request is initiated, false otherwise.
-   getRemoteTime(): boolean {
+   getRemoteTime(getLatestUSBFrame: boolean = false): boolean {
       if (this.timePoint) {
          console.warn('previous request still in progress!');
          return false; //previous request still in progress!
@@ -465,11 +475,19 @@ export class Parser {
 
       this.timePoint = new TimePoint();
 
-      this.inStream.write(this.getRemoteTimeCommand); // ask the device for its "now" time tick from the timer that drives the ADC
       if (this.inStream.source)
          this.inStream.source.getLocalSteadyClockTickNow(
             this.timePoint.localPreTimeTick
          );
+
+      if (getLatestUSBFrame) {
+         this.getRemoteTimeCommand[0] = 'u'.charCodeAt(0);
+         this.inStream.write(this.getRemoteTimeCommand);
+      } else {
+         this.getRemoteTimeCommand[0] = 'n'.charCodeAt(0);
+         this.inStream.write(this.getRemoteTimeCommand); // ask the device for its "now" time tick from the timer that drives the ADC
+      }
+
       this.incrementTimeRequestNumber();
       return true;
    }
@@ -480,12 +498,19 @@ export class Parser {
       }
 
       if (data[0] !== this.expectedTimeRequestNumber) {
+         console.warn(
+            `Time packet did not have expectedTimeRequestNumber: expected: ${this.expectedTimeRequestNumber}, received: ${data[0]}`
+         );
          return false;
       }
 
       global.clearTimeout(this.remoteTimeTimeoutId);
 
-      const timePoint = this.timePoint;
+      const isUSB = this.packetType == PacketType.kUSBFrameTIme;
+
+      const timePoint = isUSB
+         ? new USBTimePoint(this.timePoint)
+         : new TimePoint(this.timePoint);
       this.timePoint = undefined; //enable a new getRemoteTime() request
 
       if (timePoint) {
@@ -500,6 +525,13 @@ export class Parser {
 
          timePoint.remoteTimeTick[0] =
             data[1] + (data[2] << 8) + (data[3] << 16) + (data[4] << 24);
+
+         if (isUSBTimePoint(timePoint)) {
+            timePoint.latestUSBFrame = data[5] + (data[6] << 8);
+            timePoint.remoteUSBSOFTimeTick[1] = 0;
+            timePoint.remoteUSBSOFTimeTick[0] =
+               data[7] + (data[8] << 8) + (data[9] << 16) + (data[10] << 24);
+         }
 
          if (this.proxyDevice && this.proxyDevice.onRemoteTimeEvent) {
             this.proxyDevice.onRemoteTimeEvent(null, timePoint);
