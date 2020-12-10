@@ -52,7 +52,6 @@ enum ADIDeviceSynchModes
 {
    kDeviceSynchNone = 0 | 0,
    kDeviceSyncRoundTrip = 1 | 0,
-   // would like all future connection to be these types. C series compatable and us timing
    kDeviceSyncUSBFrameTimes = 2 | 0,
    kDeviceSynchUSBLocked = 4 | 0
 };
