@@ -5,6 +5,9 @@
 //#include "wiring_private.h"
 //#include "intrinsics.h"
 
+#include <ADC.h>
+#include <ADC_util.h>
+
 #include <cmath>
 #include <vector>
 #include "src/RingBufferSized.h"
@@ -70,7 +73,7 @@ const int kADCChannels = 2;
 
 const char *kSerialNumber = "00001";
 
-const char *kFWVersion = "0.9.1";
+const char *kFWVersion = "0.0.1";
 
 // https://www.pjrc.com/teensy/td_timing_IntervalTimer.html
 IntervalTimer interruptTimer;
@@ -232,21 +235,14 @@ void adc_setup()
   }
 #endif
 
-void sineWaveSample()
-{
-  // if (ledState == LOW)
-  // {
-  //   ledState = HIGH;
-  // }
-  // else
-  // {
-  //   ledState = LOW;
-  // }
-  // digitalWrite(ledPin, ledState);
+volatile bool gUSBBPinState = false;
+const int outputTestPin = 2;
 
+void mockSampleData()
+{
   const double kPi = 3.1415926535897932384626433832795;
   const double kSinewaveFreqHz = 1;
-  const double kDefaultSampleRate = 250;
+  const double kDefaultSampleRate = 100;
   const double kSamplerClockRateOffset = 0.0;
   const double radsPerSamplePerHz = kSinewaveFreqHz * 2 * kPi / kDefaultSampleRate * (1.0 - kSamplerClockRateOffset);
   const int kFullScaleADCUnits = 0x7fff; //16 bits
@@ -255,18 +251,19 @@ void sineWaveSample()
 
   for (int i(0); i < kADCChannels; ++i) // One sample per input per timer tick. Driven by timer
   {
-    //double result = ((i & 1) ? -1.0 : 1.0)*i*kAmp * sin(mPhase);
     const double measuredAmp = kAmp * gGains[i];
-    double result = measuredAmp * sin(gPhase * i);
-    if ((i & 1))
-      result = std::signbit(result) ? -measuredAmp : measuredAmp; //Square wave on odd channels
+    double result = measuredAmp * sin(gPhase);
+
+    if ((i & 1)) //Square wave on odd channels
+      result = std::signbit(result) ? -measuredAmp : measuredAmp; 
 
     int16_t iResult = result;// * 0x7000; // More reasonable that 0x7FFFF. Not going to go out of bounds
     gSampleBuffers[i].Push(iResult);
   }
-
   gPhase += radsPerSamplePerHz;
   gPhase = fmod(gPhase, 2 * kPi);
+
+  digitalWrite(outputTestPin, gUSBBPinState = !gUSBBPinState);
 }
 
 const int kMaxCommandLenBytes = 64;
@@ -313,8 +310,6 @@ volatile uint16_t gLastFrameNumber = 0;
 volatile int32_t gPrevFrameTick = -1;
 
 volatile int gLastDCOControlVal = 0;
-
-volatile bool gUSBBPinState = false;
 
 const int kHighSpeedTimerTicksPerus = 4;
 const int kHighSpeedTimerTicksPerUSBFrame = 1000 * kHighSpeedTimerTicksPerus;
@@ -431,7 +426,6 @@ void USBHandlerHook(void)
 
 void setup()
 {
-  // interruptTimer.begin(sineWaveSample, kSamplePeriodms);
   auto irqState = saveIRQState();
 
 #if 0
@@ -448,13 +442,14 @@ void setup()
 
 #endif
   restoreIRQState(irqState);
-
+   
   Serial.begin(0); //baud rate is ignored
   while (!Serial)
     ;
 
   Serial.setTimeout(50);
 
+  pinMode(outputTestPin, OUTPUT); //Test only
   pinMode(1, OUTPUT); //Test only - toggles on eachUSB SOF
   pinMode(6, OUTPUT); //Test only - toggles on each ADC_Handler()
   // pinMode(LED_BUILTIN, OUTPUT);
@@ -597,7 +592,11 @@ public:
     //if(chan == 0)
     //   mData[mPoint][chan] = 0;
     //else
-    mData[mPoint][chan] = (sample << 4) - 0x8000;
+    
+    // For 12 bit unipolar ADC
+    // mData[mPoint][chan] = (sample << 4) - 0x8000;
+
+    mData[mPoint][chan] = sample;
 
     return true;
   }
@@ -724,7 +723,7 @@ void StartSampling()
 
   //Restart the ADC timer
   // startADCTimer(gADCPointsPerSec);
-  interruptTimer.begin(sineWaveSample, kSamplePeriodms);
+  interruptTimer.begin(mockSampleData, kSamplePeriodms * 1000);
   
 
   //digitalWrite(12, LOW); //Clear Buffer overflow
@@ -864,8 +863,7 @@ void loop()
       break;
     }
     case 'v': //version info
-              //Serial.print("ArduinoRT Example V0.9.0 Channels: "+String(kADCChannels)+" $$$");
-              //Send JSON version and capabilies info
+      //Send JSON version and capabilies info
       Serial.print("{");
       Serial.print("\"deviceClass\": \"Teensy_4\",");
       Serial.print("\"deviceName\": \"Teensy 4.1\",");
