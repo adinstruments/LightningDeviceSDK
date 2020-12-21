@@ -4,25 +4,28 @@ This Teensy 4.1 firmware contains two different timing examples.
 INTERRUPT_TIMER uses interrupts to call a mock data sampling function.
 See https://www.pjrc.com/teensy/td_timing_IntervalTimer.html
 
-An alternative is to define ADC_TIMER. This uses a library to directly 
+An alternative is to define ADC_TIMER. We use this library to directly 
 connect to the ADC for improved timing. This example takes input data on pin A0.
 
 Documentation for the ADC library is at:
-
+https://forum.pjrc.com/threads/25532-ADC-library-update-now-with-support-for-Teensy-3-1
 http://pedvide.github.io/ADC/docs/Teensy_4_html/class_a_d_c___module.html#ab65bd1bb76ab7fbf4743c0e1bf456cb7
+See also src/ADCExample.io for a concise example.
 
 For a pin layout see https://www.pjrc.com/teensy-4-1-released/.
-
 */
-
 
 // #define INTERRUPT_TIMER
 #define ADC_TIMER
+
+#define __get_PRIMASK __get_primask
+#define __set_PRIMASK __set_primask
 
 #include <cmath>
 #include <vector>
 #include "src/RingBufferSized.h"
 #include "Arduino.h"
+#include <util/atomic.h>
 
 #ifdef ADC_TIMER
 
@@ -31,40 +34,40 @@ For a pin layout see https://www.pjrc.com/teensy-4-1-released/.
 
 int LEDpin = 5;
 int PWMpin = 19;
-const int readPin = A0;
+const int readPin1 = A0;
+const int readPin2 = A1;
 
 #endif // ADC_TIMER
 
-#ifdef CORE_TEENSY
-#include <util/atomic.h>
-
-#define __get_PRIMASK __get_primask
-#define __set_PRIMASK __set_primask
-
-#endif
-
-#define PHASE_LOCK_TO_USB_SOF 1
-
 const int kADCChannels = 2;
-
 const char *kSerialNumber = "00001";
-
 const char *kFWVersion = "0.0.1";
-
-#ifdef INTERRUPT_TIMER
-// https://www.pjrc.com/teensy/td_timing_IntervalTimer.html
-IntervalTimer interruptTimer;
-#endif // INTERRUPT_TIMER
-
-#ifdef ADC_TIMER
-// see src/ADCExample
-ADC *adc = new ADC(); // adc object;
-#endif                // ADC_TIMER
-
 const int ledPin = 13; // the pin with a LED
 int ledState = LOW;
 volatile double gPhase = 0;
 std::vector<double> gGains(kADCChannels, 1.0); // no gain set for now.
+const int kDefaultADCPointsPerSec = 100;
+int gADCPointsPerSec = kDefaultADCPointsPerSec; //~5000 max with 2 samples (1 point) per packet
+const int kSampleRates[] = {10000, 4000, 2000, 1000, 400, 200, 100};
+const int kSamplePeriodms = 1.0 / kDefaultADCPointsPerSec * 1000;
+const int kNSampleRates = sizeof(kSampleRates) / sizeof(int);
+const int kADCStartChan = 2; //A1
+const int kADCEndChan = kADCStartChan + kADCChannels;
+const int kBytesPerSample = sizeof(int16_t);
+
+//Statically allocating individual buffers larger than this causes the firmware to crash for some reason
+const int kTotalBufferSpaceBytes = kADCChannels < 2 ? 32000 : 64000;
+const int kBufferPoints = kTotalBufferSpaceBytes / kBytesPerSample / kADCChannels;
+typedef RingBufferSized<int16_t, kBufferPoints> TRingBuf;
+TRingBuf gSampleBuffers[kADCChannels];
+
+#ifdef INTERRUPT_TIMER
+IntervalTimer interruptTimer;
+#endif // INTERRUPT_TIMER
+
+#ifdef ADC_TIMER
+ADC *adc = new ADC(); // adc object;
+#endif                // ADC_TIMER
 
 enum ADIDeviceSynchModes
 {
@@ -74,35 +77,6 @@ enum ADIDeviceSynchModes
   kDeviceSyncUSBFrameTimes = 2 | 0,
   kDeviceSynchUSBLocked = 4 | 0
 };
-
-#ifdef TIMING_CHECK
-const int kDefaultADCPointsPerSec = 1; //1024;//100; //~5000 max with 2 samples (1 point) per packet
-#else
-const int kDefaultADCPointsPerSec = 100; //~5000 max with 2 samples (1 point) per packet
-#endif
-
-int gADCPointsPerSec = kDefaultADCPointsPerSec; //~5000 max with 2 samples (1 point) per packet
-
-const int kSampleRates[] = {10000, 4000, 2000, 1000, 400, 200, 100};
-
-const int kSamplePeriodms = 1.0 / kDefaultADCPointsPerSec * 1000;
-
-const int kNSampleRates = sizeof(kSampleRates) / sizeof(int);
-
-const int kADCStartChan = 2; //A1
-
-const int kADCEndChan = kADCStartChan + kADCChannels;
-
-const int kBytesPerSample = sizeof(int16_t);
-
-//Statically allocating individual buffers larger than this causes the firmware to crash for some reason
-const int kTotalBufferSpaceBytes = kADCChannels < 2 ? 32000 : 64000;
-
-const int kBufferPoints = kTotalBufferSpaceBytes / kBytesPerSample / kADCChannels;
-
-typedef RingBufferSized<int16_t, kBufferPoints> TRingBuf;
-
-TRingBuf gSampleBuffers[kADCChannels];
 
 void debugNewLine()
 {
@@ -143,13 +117,11 @@ void mockSampleData()
     if ((i & 1)) //Square wave on odd channels
       result = std::signbit(result) ? -measuredAmp : measuredAmp;
 
-    int16_t iResult = result; 
+    int16_t iResult = result;
     gSampleBuffers[i].Push(iResult);
   }
   gPhase += radsPerSamplePerHz;
   gPhase = fmod(gPhase, 2 * kPi);
-
-  // digitalWrite(outputTestPin, gUSBBPinState = !gUSBBPinState);
 }
 
 const int kMaxCommandLenBytes = 64;
@@ -174,7 +146,6 @@ volatile State gState = kIdle;
 volatile bool gFirstSampleTimeRequested = false;
 
 volatile bool gADCstate = false;
-
 
 const int kDFLLFineMax = 511;
 const int kDFLLFineMin = -512;
@@ -207,7 +178,6 @@ const int kLeadPhaseTC = 16;
 
 volatile int32_t gLastUSBSOFTimeus = 0;
 
-
 void setup()
 {
   auto irqState = saveIRQState();
@@ -228,13 +198,8 @@ void setup()
   adc->adc0->setConversionSpeed(ADC_CONVERSION_SPEED::VERY_HIGH_SPEED); // change the conversion speed
   adc->adc0->setSamplingSpeed(ADC_SAMPLING_SPEED::VERY_HIGH_SPEED);     // change the sampling speed
   doStart(100);
-  Serial.println("End setup");
 
 #endif // ADC_TIMER
-
-  pinMode(outputTestPin, OUTPUT); //Test only
-  pinMode(1, OUTPUT);             //Test only - toggles on eachUSB SOF
-  pinMode(6, OUTPUT);             //Test only - toggles on each ADC_Handler()
 }
 
 class PacketBase
@@ -268,15 +233,14 @@ public:
   {
     if (mPoint >= gADCPointsPerPacket)
       return false;
-   
-    
-    #ifdef ADC_TIMER
-    mData[mPoint][chan] = (sample << 4) - 0x8000;
-    #endif //ADC_TIMER
 
-    #ifdef INTERRUPT_TIMER
-      mData[mPoint][chan] = sample;
-    #endif //
+#ifdef ADC_TIMER
+    mData[mPoint][chan] = (sample << 4) - 0x8000;
+#endif //ADC_TIMER
+
+#ifdef INTERRUPT_TIMER
+    mData[mPoint][chan] = sample;
+#endif //
 
     return true;
   }
@@ -384,32 +348,16 @@ protected:
 
 void StartSampling()
 {
-
-#if 0
-    
-  adcTimer.enable(false);
-  NVIC_DisableIRQ(ADC0_1_IRQn);
-  NVIC_ClearPendingIRQ(ADC0_1_IRQn);
-
-#endif
-
   for (int chan(0); chan < kADCChannels; ++chan)
   {
     auto &buffer = gSampleBuffers[chan];
     buffer.Clear();
   }
 
-  // adc_setup();
-
-  //Restart the ADC timer
-  // startADCTimer(gADCPointsPerSec);
-
 #ifdef INTERRUPT_TIMER
   interruptTimer.begin(mockSampleData, kSamplePeriodms * 1000);
 #endif // INTERRUPT_TIMER
 
-  //digitalWrite(12, LOW); //Clear Buffer overflow
-  //Packet::ResetPacketCount();
   gState = kWaitingForUSBSOF;
 
   digitalWrite(ledPin, HIGH);
@@ -450,61 +398,39 @@ void sendFirstSampleTimeIfNeeded()
 
 volatile uint16_t adc_val;
 
-// ADC Library https://forum.pjrc.com/threads/25532-ADC-library-update-now-with-support-for-Teensy-3-1
 void adc0_isr()
 {
-  // CORE_PIN5_PORTSET = CORE_PIN5_BITMASK; // debug pin=high
   adc_val = (int16_t)ADC1_R0;
-
-  const int kAmp = 0x7fff; //16 bits
-
-  for (int i(0); i < kADCChannels; ++i)
-  {
-    // const double measuredAmp = kAmp * gGains[i];
-    // double result = measuredAmp * adc_val;
-
-    // if ((i & 1)) //Square wave on odd channels
-    //   result = std::signbit(result) ? -measuredAmp : measuredAmp;
-
-    int16_t iResult = adc_val;
-    gSampleBuffers[i].Push(iResult);
-  }
-
+  int16_t iResult = adc_val;
+  gSampleBuffers[0].Push(iResult);
   digitalWrite(outputTestPin, gUSBBPinState = !gUSBBPinState);
+}
 
-
-//   analogWrite(PWMpin, adc_val);
-//   CORE_PIN5_PORTCLEAR = CORE_PIN5_BITMASK; // debug pin=low
-// #if defined(__IMXRT1062__)                 // Teensy 4.0
-//   asm("DSB");
-// #endif
+void adc1_isr()
+{
+  adc_val = (int16_t)ADC2_R0;
+  int16_t iResult = adc_val;
+  gSampleBuffers[1].Push(iResult);
+  digitalWrite(outputTestPin, gUSBBPinState = !gUSBBPinState);
 }
 
 void doStart(int freq)
 {
-  Serial.print("Start Timer with frequency ");
-  Serial.print(freq);
-  Serial.println(" Hz.");
   adc->adc0->stopTimer();
-  adc->adc0->startSingleRead(readPin); // call this to setup everything before the Timer starts, differential is also possible
+  adc->adc0->startSingleRead(readPin1); // call this to setup everything before the Timer starts, differential is also possible
   adc->adc0->enableInterrupts(adc0_isr);
   adc->adc0->startTimer(freq); //frequency in Hz
+
+  adc->adc1->stopTimer();
+  adc->adc1->startSingleRead(readPin2);
+  adc->adc1->enableInterrupts(adc1_isr);
+  adc->adc1->startTimer(freq);
 }
 
 #endif // ADC_TIMER
 
 void loop()
 {
-
-#ifdef TIMING_CHECK
-  int32_t delta = gLastADCus - gLastLastADCus;
-  if (delta > 0)
-  {
-    Serial.println("  delta = " + String(delta));
-    gLastLastADCus = gLastADCus;
-  }
-#endif
-
   int hasRx = Serial.peek();
 
   if (hasRx >= 0)
@@ -512,14 +438,9 @@ void loop()
     char cmdBuf[kMaxCommandLenBytes];
     int bytesRead = Serial.readBytesUntil('\n', cmdBuf, kMaxCommandLenBytes);
 
-#ifdef ENABLE_SERIAL_DEBUGGING
-    SerialUSB.println("bytesRead=" + String(bytesRead));
-    SerialUSB.println(cmdBuf[0], HEX);
-    SerialUSB.println(cmdBuf[1], HEX);
-    SerialUSB.println();
-#endif
     auto cmd = cmdBuf[0];
 
+    // for examples of other device commands see SAMDLightning.ino
     switch (cmd)
     {
     case 'b': //begin sampling
@@ -530,71 +451,10 @@ void loop()
       if (gState == kSampling)
         sendFirstSampleTimeIfNeeded();
       break;
-
-#ifdef ENABLE_DCO_TEST_COMMANDS
-    case 'D':
-    {
-      int coarseFreq = OSCCTRL->DFLLVAL.bit.COARSE;
-      OSCCTRL->DFLLVAL.bit.COARSE = --coarseFreq;
-      Serial.println("DFLL coarse =" + String(coarseFreq));
-      break;
-    }
-    case 'I':
-    {
-      int coarseFreq = OSCCTRL->DFLLVAL.bit.COARSE;
-      OSCCTRL->DFLLVAL.bit.COARSE = ++coarseFreq;
-      Serial.println("DFLL coarse =" + String(coarseFreq));
-      break;
-    }
-    case 'd':
-    {
-      int fineFreq = OSCCTRL->DFLLVAL.bit.FINE;
-      OSCCTRL->DFLLVAL.bit.FINE = --fineFreq;
-      Serial.println("DFLL fine =" + String(fineFreq));
-      break;
-    }
-    case 'i':
-    {
-      int fineFreq = OSCCTRL->DFLLVAL.bit.FINE;
-      OSCCTRL->DFLLVAL.bit.FINE = ++fineFreq;
-      Serial.println("DFLL fine =" + String(fineFreq));
-      break;
-    }
-#endif
-
     case 's': //stop sampling
       StopSampling();
       break;
-    case 'n': //return micro second time now
-    {
-      int32_t now = micros();
-      //uint64_t now64 = micros64();
-      //digitalWrite(5, HIGH);
-
-      auto timeRequestNumber = cmdBuf[1];
-      TimePacket timePacket(now, timeRequestNumber);
-      timePacket.write(Serial);
-
-      //digitalWrite(5, LOW);
-
-      break;
-    }
-    case 'u': //time of last USB SOF
-    {
-
-      auto irqState = saveIRQState(); //disable interrupts
-      auto lastUSBSOFTimeus = gLastUSBSOFTimeus;
-      auto lastFrameNumber = gLastFrameNumber;
-      int32_t now = micros();
-      restoreIRQState(irqState);
-
-      auto timeRequestNumber = cmdBuf[1];
-      LatestUSBFrameTimePacket packet(now, timeRequestNumber, lastFrameNumber, lastUSBSOFTimeus);
-      packet.write(Serial);
-      break;
-    }
-    case 'v': //version info
-      //Send JSON version and capabilies info
+    case 'v': //version info as JSON
       Serial.print("{");
       Serial.print("\"deviceClass\": \"Teensy_4\",");
       Serial.print("\"deviceName\": \"Teensy 4.1\",");
@@ -606,23 +466,20 @@ void loop()
 
       Packet::ResetPacketCount(); //new session
 
-#ifdef ENABLE_SERIAL_DEBUGGING
-      SerialUSB.println("Sent version info");
-#endif
       break;
-    case '~': //sample rate
-    {
-      auto rateChar = cmdBuf[1]; //'0123456'
-      unsigned int index = rateChar - '0';
-      if (index < sizeof(kSampleRates) / sizeof(int))
-        gADCPointsPerSec = kSampleRates[index];
-      if (gADCPointsPerSec > 100)
-        gADCPointsPerPacket = kPointsPerMediumSizePacket;
-      else
-        gADCPointsPerPacket = kPointsPerPacket;
+    // case '~': //sample rate
+    // {
+    //   auto rateChar = cmdBuf[1]; //'0123456'
+    //   unsigned int index = rateChar - '0';
+    //   if (index < sizeof(kSampleRates) / sizeof(int))
+    //     gADCPointsPerSec = kSampleRates[index];
+    //   if (gADCPointsPerSec > 100)
+    //     gADCPointsPerPacket = kPointsPerMediumSizePacket;
+    //   else
+    //     gADCPointsPerPacket = kPointsPerPacket;
 
-      break;
-    }
+    //   break;
+    // }
     default:
       break;
     }
@@ -658,14 +515,8 @@ void loop()
       }
       packet.nextPoint();
     }
-
-    //digitalWrite(7, HIGH);
     packet.write(Serial);
-    //digitalWrite(7, LOW);
-
     --points;
-
-    //debugNewLine();   //Readability while testing only!
   }
 
 } //loop
