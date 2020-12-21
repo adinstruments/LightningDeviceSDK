@@ -1,16 +1,39 @@
-//#define __arm__ 1
+/*
+This Teensy 4.1 firmware contains two different timing examples.
 
-//#include "src/Adafruit_ZeroTimer.h"
-#include "Arduino.h"
-//#include "wiring_private.h"
-//#include "intrinsics.h"
+INTERRUPT_TIMER uses interrupts to call a mock data sampling function.
+See https://www.pjrc.com/teensy/td_timing_IntervalTimer.html
 
-#include <ADC.h>
-#include <ADC_util.h>
+An alternative is to define ADC_TIMER. This uses a library to directly 
+connect to the ADC for improved timing. This example takes input data on pin A0.
+
+Documentation for the ADC library is at:
+
+http://pedvide.github.io/ADC/docs/Teensy_4_html/class_a_d_c___module.html#ab65bd1bb76ab7fbf4743c0e1bf456cb7
+
+For a pin layout see https://www.pjrc.com/teensy-4-1-released/.
+
+*/
+
+
+//#define INTERRUPT_TIMER
+#define ADC_TIMER
 
 #include <cmath>
 #include <vector>
 #include "src/RingBufferSized.h"
+#include "Arduino.h"
+
+#ifdef ADC_TIMER
+
+#include <ADC.h>
+#include <ADC_util.h>
+
+int LEDpin = 5;
+int PWMpin = 19;
+const int readPin = A0;
+
+#endif // ADC_TIMER
 
 #ifdef CORE_TEENSY
 #include <util/atomic.h>
@@ -21,12 +44,6 @@
 #endif
 
 #define PHASE_LOCK_TO_USB_SOF 1
-//#define TIMER_OUTPUT_FOR_TEST 1
-//#define OUTPUT_USB_SOF_PLL_SIGNALS 1
-//#define ENABLE_DCO_TEST_COMMANDS 1
-
-//Adafruit_ZeroTimer adcTimer(4);
-
 #ifdef TIMER_OUTPUT_FOR_TEST
 Adafruit_ZeroTimer zt3(3, GCLK_PCHCTRL_GEN_GCLK2_Val); //Testing with GCLK2 set to 48MHz not 100 MHz
 #endif
@@ -75,12 +92,18 @@ const char *kSerialNumber = "00001";
 
 const char *kFWVersion = "0.0.1";
 
+#ifdef INTERRUPT_TIMER
 // https://www.pjrc.com/teensy/td_timing_IntervalTimer.html
 IntervalTimer interruptTimer;
+#endif // INTERRUPT_TIMER
+
+#ifdef ADC_TIMER
+// see src/ADCExample
+ADC *adc = new ADC(); // adc object;
+#endif                // ADC_TIMER
 
 const int ledPin = 13; // the pin with a LED
 int ledState = LOW;
-
 volatile double gPhase = 0;
 std::vector<double> gGains(kADCChannels, 1.0); // no gain set for now.
 
@@ -139,102 +162,6 @@ inline void restoreIRQState(uint32_t pmask)
   __set_PRIMASK(pmask);
 }
 
-#if 0
-
-inline void syncADC0_ENABLE()
-  {
-  while (ADC0->SYNCBUSY.reg & ADC_SYNCBUSY_ENABLE)
-    ;
-  }
-
-inline void syncADC0_CTRLB()
-  {
-  while (ADC0->SYNCBUSY.reg & ADC_SYNCBUSY_CTRLB)
-    ;
-  }
-
-inline void syncADC0_SAMPCTRL()
-  {
-  while (ADC0->SYNCBUSY.reg & ADC_SYNCBUSY_SAMPCTRL)
-    ;
-  }
-
-inline void syncADC0_INPUTCTRL()
-  {
-  while (ADC0->SYNCBUSY.reg & ADC_SYNCBUSY_INPUTCTRL)
-    ;
-  }
-
-inline void syncADC0_SWTRIG()
-  {
-  while (ADC0->SYNCBUSY.reg & ADC_SYNCBUSY_SWTRIG)
-    ;
-  }
-
-void startADCTimer(uint32_t frequency)
-  {
-  /********************* Timer #4 + #5, 32 bit, one PWM out */
-  adcTimer.configure(TC_CLOCK_PRESCALER_DIV1,      // prescaler
-             TC_COUNTER_SIZE_32BIT,        // bit width of timer/counter
-             TC_WAVE_GENERATION_MATCH_FREQ // frequency or PWM mode
-  );
-  //adcTimer.setPeriodMatch(1000, 200);      // channel 1 only, 200/1000 count
-  //Adafruit timer routines set the timer source to GCLK1 (48 MHz)
-  adcTimer.setCompare(0, VARIANT_GCLK1_FREQ / frequency - 1);
-#ifdef ENABLE_ADCTIMER_PWMOUT
-  //N.B. this will be at half the rate of the ADC (i.e. each edge triggers a set of conversions across channels)
-  if (!adcTimer.PWMout(true, 0, TIMER4_OUT0))
-    {
-    Serial.println("Failed to configure PWM output");
-    }
-#endif
-
-  TC4->COUNT32.EVCTRL.reg |= TC_EVCTRL_MCEO0;
-  while (TC4->COUNT32.SYNCBUSY.reg > 0)
-    ; // Wait for synchronization
-
-   //Setup event system so TC4 triggers ADC conversion start
-  MCLK->APBBMASK.reg |= MCLK_APBBMASK_EVSYS;
-
-  // Select the event system user on channel 0 (USER number = channel number + 1)
-  EVSYS->USER[EVSYS_ID_USER_ADC0_START].reg = EVSYS_USER_CHANNEL(1); // Set the event user (receiver) as timer TC0
-
-  EVSYS->Channel[0].CHANNEL.reg = EVSYS_CHANNEL_EDGSEL_NO_EVT_OUTPUT |         // No event edge detection
-    EVSYS_CHANNEL_PATH_ASYNCHRONOUS |            // Set event path as asynchronous
-    EVSYS_CHANNEL_EVGEN(EVSYS_ID_GEN_TC4_MCX_0); // Set event generator (sender) as TC4 Match/Capture 0
-
-//Now do this in USBHandlerHook() so sampling starts on a USB Frame
-//adcTimer.enable(true);
-  }
-
-void adc_setup()
-  {
-  //Setup ADC
-
-  analogReadResolution(12);
-  analogReference(AR_DEFAULT);
-
-  pinPeripheral(A1, PIO_ANALOG);
-  pinPeripheral(A2, PIO_ANALOG);
-
-  ADC0->INPUTCTRL.bit.MUXPOS = kADCStartChan;
-  syncADC0_INPUTCTRL();
-
-  //PM->APBCMASK.reg |= PM_APBCMASK_ADC; already done by wiring.c
-
-  ADC0->EVCTRL.reg = ADC_EVCTRL_STARTEI; //Start on event
-
-  ADC0->INTENSET.reg = ADC_INTENSET_RESRDY; //Enable interrupt on result ready
-
-  ADC0->CTRLA.bit.ENABLE = 1; // Enable ADC
-  syncADC0_ENABLE();
-
-  //NVIC_SetPriority(ADC_IRQn, 0);    // Set the Nested Vector Interrupt Controller (NVIC) priority for ADC to 0 (highest)
-
-  NVIC_EnableIRQ(ADC0_1_IRQn);
-  }
-#endif
-
 volatile bool gUSBBPinState = false;
 const int outputTestPin = 2;
 
@@ -247,7 +174,7 @@ void mockSampleData()
   const double radsPerSamplePerHz = kSinewaveFreqHz * 2 * kPi / kDefaultSampleRate * (1.0 - kSamplerClockRateOffset);
   const int kFullScaleADCUnits = 0x7fff; //16 bits
   const double kMaxGain = 24;
-  const double kAmp = kFullScaleADCUnits;// / kMaxGain; //ADC units
+  const double kAmp = kFullScaleADCUnits; // / kMaxGain; //ADC units
 
   for (int i(0); i < kADCChannels; ++i) // One sample per input per timer tick. Driven by timer
   {
@@ -255,15 +182,15 @@ void mockSampleData()
     double result = measuredAmp * sin(gPhase);
 
     if ((i & 1)) //Square wave on odd channels
-      result = std::signbit(result) ? -measuredAmp : measuredAmp; 
+      result = std::signbit(result) ? -measuredAmp : measuredAmp;
 
-    int16_t iResult = result;// * 0x7000; // More reasonable that 0x7FFFF. Not going to go out of bounds
+    int16_t iResult = result; 
     gSampleBuffers[i].Push(iResult);
   }
   gPhase += radsPerSamplePerHz;
   gPhase = fmod(gPhase, 2 * kPi);
 
-  digitalWrite(outputTestPin, gUSBBPinState = !gUSBBPinState);
+  // digitalWrite(outputTestPin, gUSBBPinState = !gUSBBPinState);
 }
 
 const int kMaxCommandLenBytes = 64;
@@ -289,18 +216,9 @@ volatile bool gFirstSampleTimeRequested = false;
 
 volatile bool gADCstate = false;
 
-/**
- * Measured one fine step (133 to 134) to give a frequency offset of 5 parts in 10000
- * with the SAMD51.
- * Measured one coarse step to equal 12 fine steps. It was intially 29 out of 64 steps total.
-*/
-#if defined(__SAMD51__)
-const int kDFLLFineMax = 127;
-const int kDFLLFineMin = -128;
-#else
+
 const int kDFLLFineMax = 511;
 const int kDFLLFineMin = -512;
-#endif
 
 extern "C" void UDD_Handler(void);
 
@@ -316,13 +234,9 @@ const int kHighSpeedTimerTicksPerUSBFrame = 1000 * kHighSpeedTimerTicksPerus;
 
 const int kOneOverLeadGainus = 1; // 1/proportional gain
 
-#if defined(__SAMD51__)
-const int kOneOverLagGainus = 4096; // 1/integral gain
-const int kOneOverClippedLeadGainus = 4;
-#else
 const int kOneOverLagGainus = 2048; // 1/integral gain
 const int kOneOverClippedLeadGainus = 1;
-#endif
+
 const int kFixedPointScaling = kOneOverLagGainus * kHighSpeedTimerTicksPerus;
 
 //Integrator for integral feedback to remove DC error
@@ -334,227 +248,34 @@ const int kLeadPhaseTC = 16;
 
 volatile int32_t gLastUSBSOFTimeus = 0;
 
-#if 0
-void USBHandlerHook(void)
-  {
-  if (USB->DEVICE.INTFLAG.bit.SOF) //Start of USB Frame interrupt
-    {
-    uint32_t frameTick = ((SysTick->LOAD - SysTick->VAL) * (kHighSpeedTimerTicksPerus * 1024 * 1024 / (VARIANT_MCK / 1000000))) >> 20;
-    auto frame_us = frameTick / kHighSpeedTimerTicksPerus;
-
-    auto newUSBSOFTimeus = micros();
-
-    //In general, micros() is not reliable when called from within an Interrupt Service Routine
-    //and it is difficult to implement reliably across platforms.
-    //When the processor is locked to USB, the USB SOF interrupts are happening around the same
-    //time as the 1 kHz system timer interrupts that increment millis.
-    //As a result, the hardware timer part of micros() can wrap before the millis part has been
-    //incremented.
-    //The following lines check for this case and handle it in a processor independent way.
-    auto lastUSBSOFTimeus = gLastUSBSOFTimeus;
-    if (newUSBSOFTimeus - lastUSBSOFTimeus < kUSBFramePeriodus / 2)
-      newUSBSOFTimeus += kUSBFramePeriodus;
-
-    auto frameNumber = USB->DEVICE.FNUM.bit.FNUM;
-
-    digitalWrite(1, gUSBBPinState = !gUSBBPinState);
-
-    //Measure phase using Cortex cpu timer. Convert to 0.25 us ticks using a runtime multiply and compile time divides for speed.
-    if (gState == kWaitingForUSBSOF)
-      {
-      adcTimer.enable(true);
-      gState = kStartingSampling;
-      }
-    //frameus in range [0, 1000)
-    //usbd.frameNumber();
-
-    //if(gPrevFrameTick >= 0)
-    {
-    int phase = frameTick;
-    //phase needs to be bipolar, so wrap values above kHighSpeedTimerTicksPerUSBFrame/2 to be -ve. We want to lock with frameHSTick near 0.
-    if (phase >= kHighSpeedTimerTicksPerUSBFrame / 2)
-      phase -= kHighSpeedTimerTicksPerUSBFrame;
-
-    //First order LPF for lead (proportional) feedback (LPF to reduce the effects of phase detector noise)
-    gLeadPhaseAccum += phase;
-    int leadPhase = gLeadPhaseAccum / kLeadPhaseTC;
-    gLeadPhaseAccum -= leadPhase;
-
-    //Unfiltered lead feedback clipped to +/- 1 to reduce the effects of phase detector noise without adding delay
-    int signOfPhase = 0;
-    if (phase > 0)
-      signOfPhase = 1;
-    else if (phase < 0)
-      signOfPhase = -1;
-
-    //Calculate the filtered error signal
-    int32_t filterOut = (signOfPhase * kFixedPointScaling / kOneOverClippedLeadGainus +
-               leadPhase * kFixedPointScaling / (kOneOverLeadGainus * kHighSpeedTimerTicksPerus) +
-               sPSDPhaseAccum) /
-      kFixedPointScaling;
-    sPSDPhaseAccum += phase; //integrate the phase to get lag (integral, 2nd order) feedback
-
-    //Clip to limits of DCO
-    if (filterOut > kDFLLFineMax)
-      filterOut = kDFLLFineMax;
-    else if (filterOut < kDFLLFineMin)
-      filterOut = kDFLLFineMin;
-
-    int32_t newDCOControlVal = kDFLLFineMax - filterOut;
-
-    gLastDCOControlVal = newDCOControlVal;
-
-    //Set DCO control value
-#ifdef PHASE_LOCK_TO_USB_SOF
-#if defined(__SAMD51__)
-    OSCCTRL->DFLLVAL.bit.FINE = newDCOControlVal & 0xff;
-#else
-     //SAMD21 has 10 bit fine DCO control
-    SYSCTRL->DFLLVAL.bit.FINE = newDCOControlVal & 0x3ff;
-#endif
-#endif
-    }
-    gLastFrameNumber = frameNumber;
-    gLastUSBSOFTimeus = newUSBSOFTimeus;
-
-    gPrevFrameTick = frameTick;
-    }
-  UDD_Handler();
-  }
-
-#endif
 
 void setup()
 {
   auto irqState = saveIRQState();
 
-#if 0
-
-  //Open loop mode
-#if defined(__SAMD51__)
-  OSCCTRL->DFLLCTRLB.reg &= ~OSCCTRL_DFLLCTRLB_MODE;
-#else
-   //SAMD21
-  SYSCTRL->DFLLCTRL.reg &= ~SYSCTRL_DFLLCTRL_MODE
-#endif
-
-    USB_SetHandler(&USBHandlerHook);
-
-#endif
   restoreIRQState(irqState);
-   
+
   Serial.begin(0); //baud rate is ignored
   while (!Serial)
     ;
 
   Serial.setTimeout(50);
 
+#ifdef ADC_TIMER
+
+  ///// ADC0 ////
+  adc->adc0->setAveraging(1);                                           // set number of averages
+  adc->adc0->setResolution(16);                                         // set bits of resolution
+  adc->adc0->setConversionSpeed(ADC_CONVERSION_SPEED::VERY_HIGH_SPEED); // change the conversion speed
+  adc->adc0->setSamplingSpeed(ADC_SAMPLING_SPEED::VERY_HIGH_SPEED);     // change the sampling speed
+  doStart(100);
+  Serial.println("End setup");
+
+#endif // ADC_TIMER
+
   pinMode(outputTestPin, OUTPUT); //Test only
-  pinMode(1, OUTPUT); //Test only - toggles on eachUSB SOF
-  pinMode(6, OUTPUT); //Test only - toggles on each ADC_Handler()
-  // pinMode(LED_BUILTIN, OUTPUT);
-  // digitalWrite(LED_BUILTIN, LOW);
-
-#ifdef TIMER_OUTPUT_FOR_TEST
-  /********************* Timer #3, 16 bit, one PWM out, period = 1024 */
-  zt3.configure(TC_CLOCK_PRESCALER_DIV1,     // prescaler
-                TC_COUNTER_SIZE_16BIT,       // bit width of timer/counter
-                TC_WAVE_GENERATION_MATCH_PWM // frequency or PWM mode
-  );
-  const uint32_t kTicks = VARIANT_GCLK2_FREQ / 1000; ///1024;
-  zt3.setPeriodMatch(kTicks - 1, kTicks / 4);        // channel 1 only, 200/1000 count
-  if (!zt3.PWMout(true, 1, TIMER3_OUT1))
-  {
-    Serial.println("Failed to configure PWM output");
-  }
-
-#ifdef _VARIANT_SAMD51_THING_PLUS_
-  //Sparkfun Thing Plus has different pin mapping from Adafruit Feather M4
-  PORT->Group[0].PINCFG[15].reg = PORT_PINCFG_PMUXEN; //PA15
-  PORT->Group[0].PMUX[7].reg &= ~(PORT_PMUX_PMUXO_Msk);
-  PORT->Group[0].PMUX[7].reg |= 0x04 << 4; //   PORT_PMUX_PMUXO_E;
-#endif
-      //  PORT->Group[g_APinDescription[ulPin].ulPort].DIRSET.reg = (uint32_t)(1<<g_APinDescription[ulPin].ulPin) ;
-
-  zt3.enable(true);
-  /*********************************************/
-
-#endif
-
-#if 0
-
-  adc_setup();
-  startADCTimer(gADCPointsPerSec);
-  }
-
-#ifdef TIMING_CHECK
-volatile int32_t gLastADCus = 0;
-int32_t gLastLastADCus = 0;
-#endif
-
-
-volatile int gLastBit = 0;
-
-void ADC0_1_Handler()
-  {
-#ifdef TIMING_CHECK
-  gLastADCus = micros();
-#endif
-
-
-  digitalWrite(6, gADCstate = !gADCstate);
-
-  int val = ADC0->RESULT.reg;
-
-  syncADC0_INPUTCTRL();
-  int chan = ADC0->INPUTCTRL.bit.MUXPOS;
-
-#endif
-
-#ifdef OUTPUT_USB_SOF_PLL_SIGNALS
-  if (chan - kADCStartChan == 0)
-  {
-    //val = gLastBit;
-    //gLastBit = 1-gLastBit;
-    val = gPrevFrameTick;
-    if (val >= kHighSpeedTimerTicksPerUSBFrame / 2)
-      val -= kHighSpeedTimerTicksPerUSBFrame;
-  }
-  else if (chan - kADCStartChan == 1)
-  {
-    val = gLastDCOControlVal; //OSCCTRL->DFLLVAL.bit.FINE;
-  }
-  val += 2048;
-#endif
-
-#if 0
-
-  //Testing!!
-  if (!gSampleBuffers[chan - kADCStartChan].Push(val))
-    digitalWrite(LED_BUILTIN, LOW); //Turn off LED to indicate overflow
-
-  if (chan == kADCStartChan && gState == kStartingSampling)
-    {
-    gFirstADCPointus = micros();
-    gState = kHadFirstSample;
-    }
-
-  if (++chan < kADCEndChan)
-    {
-    ADC0->INPUTCTRL.bit.MUXPOS = chan;
-    syncADC0_INPUTCTRL();
-
-    ADC0->SWTRIG.bit.START = 1;
-    syncADC0_SWTRIG();
-    }
-  else
-    {
-    ADC0->INPUTCTRL.bit.MUXPOS = kADCStartChan;
-    syncADC0_INPUTCTRL();
-    }
-
-#endif
-  //digitalWrite(6, gADCstate = !gADCstate );
+  pinMode(1, OUTPUT);             //Test only - toggles on eachUSB SOF
+  pinMode(6, OUTPUT);             //Test only - toggles on each ADC_Handler()
 }
 
 class PacketBase
@@ -592,11 +313,18 @@ public:
     //if(chan == 0)
     //   mData[mPoint][chan] = 0;
     //else
-    
-    // For 12 bit unipolar ADC
-    // mData[mPoint][chan] = (sample << 4) - 0x8000;
 
-    mData[mPoint][chan] = sample;
+    // For 12 bit unipolar ADC
+    
+    
+    // ADC????
+    mData[mPoint][chan] = (sample << 4) - 0x8000;
+
+
+
+
+    // for INTERRUPT_TIMER
+    // mData[mPoint][chan] = sample;
 
     return true;
   }
@@ -723,8 +451,10 @@ void StartSampling()
 
   //Restart the ADC timer
   // startADCTimer(gADCPointsPerSec);
+
+#ifdef INTERRUPT_TIMER
   interruptTimer.begin(mockSampleData, kSamplePeriodms * 1000);
-  
+#endif // INTERRUPT_TIMER
 
   //digitalWrite(12, LOW); //Clear Buffer overflow
   //Packet::ResetPacketCount();
@@ -738,7 +468,9 @@ void StopSampling()
   gState = kIdle;
   gFirstSampleTimeRequested = false;
 
+#ifdef INTERRUPT_TIMER
   interruptTimer.end();
+#endif // INTERRUPT_TIMER
 
   for (int chan(0); chan < kADCChannels; ++chan)
   {
@@ -761,6 +493,53 @@ void sendFirstSampleTimeIfNeeded()
 
   debugNewLine(); //Readability while testing only!
 }
+
+#ifdef ADC_TIMER
+
+volatile uint16_t adc_val;
+
+// ADC Library https://forum.pjrc.com/threads/25532-ADC-library-update-now-with-support-for-Teensy-3-1
+void adc0_isr()
+{
+  // CORE_PIN5_PORTSET = CORE_PIN5_BITMASK; // debug pin=high
+  adc_val = (int16_t)ADC1_R0;
+
+  const int kAmp = 0x7fff; //16 bits
+
+  for (int i(0); i < kADCChannels; ++i)
+  {
+    // const double measuredAmp = kAmp * gGains[i];
+    // double result = measuredAmp * adc_val;
+
+    // if ((i & 1)) //Square wave on odd channels
+    //   result = std::signbit(result) ? -measuredAmp : measuredAmp;
+
+    int16_t iResult = adc_val;
+    gSampleBuffers[i].Push(iResult);
+  }
+
+  digitalWrite(outputTestPin, gUSBBPinState = !gUSBBPinState);
+
+
+//   analogWrite(PWMpin, adc_val);
+//   CORE_PIN5_PORTCLEAR = CORE_PIN5_BITMASK; // debug pin=low
+// #if defined(__IMXRT1062__)                 // Teensy 4.0
+//   asm("DSB");
+// #endif
+}
+
+void doStart(int freq)
+{
+  Serial.print("Start Timer with frequency ");
+  Serial.print(freq);
+  Serial.println(" Hz.");
+  adc->adc0->stopTimer();
+  adc->adc0->startSingleRead(readPin); // call this to setup everything before the Timer starts, differential is also possible
+  adc->adc0->enableInterrupts(adc0_isr);
+  adc->adc0->startTimer(freq); //frequency in Hz
+}
+
+#endif // ADC_TIMER
 
 void loop()
 {
@@ -896,8 +675,6 @@ void loop()
       break;
     }
   }
-
-
 
   if (gState == kIdle)
     return;
