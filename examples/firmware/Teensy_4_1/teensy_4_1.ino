@@ -16,7 +16,7 @@ For a pin layout see https://www.pjrc.com/teensy-4-1-released/.
 */
 
 
-//#define INTERRUPT_TIMER
+// #define INTERRUPT_TIMER
 #define ADC_TIMER
 
 #include <cmath>
@@ -44,49 +44,8 @@ const int readPin = A0;
 #endif
 
 #define PHASE_LOCK_TO_USB_SOF 1
-#ifdef TIMER_OUTPUT_FOR_TEST
-Adafruit_ZeroTimer zt3(3, GCLK_PCHCTRL_GEN_GCLK2_Val); //Testing with GCLK2 set to 48MHz not 100 MHz
-#endif
 
-/* Valid PWM outs (for Adafruit Feather ):
-
-FOR SAMD21:
-  Timer3: channel 0 on D2 or D10, channel 1 on D5 or D12
-  Timer4: channel 0 on SDA or A1, channel 2 on SCL or A2
-  Timer5: channel 0 on MOSI, channel 1 on SCK
-
-FOR SAMD51:
-  Timer3: channel 0 on D10 or MISO, channel 1 on D11
-  Timer4: channel 0 on A4, D7, or D1, channel 2 on A5, D4, or D0
-  Timer5: channel 0 on D5, channel 1 on D6
-*/
-
-//#if defined(__SAMD51__)
-//#define TIMER3_OUT0 10
-//#define TIMER3_OUT1 11
-//
-//#define TIMER4_OUT0 A4
-//#define TIMER4_OUT1 A5
-//
-//#define TIMER5_OUT1 6
-//#else
-//#define TIMER3_OUT0 10
-//#define TIMER3_OUT1 12
-//
-//#define TIMER4_OUT0 A1
-//#define TIMER4_OUT1 A2
-//
-//#define TIMER5_OUT1 SCK
-//#endif
-
-//#define ENABLE_ADCTIMER_PWMOUT 1
-//#define TIMING_CHECK 1
-
-#ifdef TIMING_CHECK
-const int kADCChannels = 1; //2;
-#else
 const int kADCChannels = 2;
-#endif
 
 const char *kSerialNumber = "00001";
 
@@ -309,22 +268,15 @@ public:
   {
     if (mPoint >= gADCPointsPerPacket)
       return false;
-    //Testing!!
-    //if(chan == 0)
-    //   mData[mPoint][chan] = 0;
-    //else
-
-    // For 12 bit unipolar ADC
+   
     
-    
-    // ADC????
+    #ifdef ADC_TIMER
     mData[mPoint][chan] = (sample << 4) - 0x8000;
+    #endif //ADC_TIMER
 
-
-
-
-    // for INTERRUPT_TIMER
-    // mData[mPoint][chan] = sample;
+    #ifdef INTERRUPT_TIMER
+      mData[mPoint][chan] = sample;
+    #endif //
 
     return true;
   }
