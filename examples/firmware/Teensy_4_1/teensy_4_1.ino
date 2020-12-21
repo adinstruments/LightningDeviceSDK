@@ -15,8 +15,9 @@ See also src/ADCExample.io for a concise example.
 For a pin layout see https://www.pjrc.com/teensy-4-1-released/.
 */
 
-// #define INTERRUPT_TIMER
-#define ADC_TIMER
+// One of these two timing options should be commented out.
+#define INTERRUPT_TIMER
+// #define ADC_TIMER
 
 #define __get_PRIMASK __get_primask
 #define __set_PRIMASK __set_primask
@@ -106,8 +107,7 @@ void mockSampleData()
   const double kSamplerClockRateOffset = 0.0;
   const double radsPerSamplePerHz = kSinewaveFreqHz * 2 * kPi / kDefaultSampleRate * (1.0 - kSamplerClockRateOffset);
   const int kFullScaleADCUnits = 0x7fff; //16 bits
-  const double kMaxGain = 24;
-  const double kAmp = kFullScaleADCUnits; // / kMaxGain; //ADC units
+  const double kAmp = kFullScaleADCUnits; //
 
   for (int i(0); i < kADCChannels; ++i) // One sample per input per timer tick. Driven by timer
   {
@@ -436,7 +436,7 @@ void loop()
   if (hasRx >= 0)
   {
     char cmdBuf[kMaxCommandLenBytes];
-    int bytesRead = Serial.readBytesUntil('\n', cmdBuf, kMaxCommandLenBytes);
+    Serial.readBytesUntil('\n', cmdBuf, kMaxCommandLenBytes);
 
     auto cmd = cmdBuf[0];
 
