@@ -183,7 +183,15 @@ export class DeviceClass implements IDeviceClass {
                callback(null, null); //Device not found
             }
             const versionInfoJSON = resultStr.slice(startPos, endPos);
-            const versionInfo = JSON.parse(versionInfoJSON);
+            let versionInfo;
+            try {
+               versionInfo = JSON.parse(versionInfoJSON);
+            } catch(err) {
+               console.warn('JSON error when parsing version information: ', versionInfoJSON, err.message);
+
+               callback(null, null); //Device not found
+            }
+
             if (
                !(
                   versionInfo.deviceClass &&
