@@ -49,7 +49,7 @@ std::vector<double> gGains(kADCChannels, 1.0); // no gain set for now.
 const int kDefaultADCPointsPerSec = 100;
 int gADCPointsPerSec = kDefaultADCPointsPerSec; //~5000 max with 2 samples (1 point) per packet
 const int kSampleRates[] = {10000, 4000, 2000, 1000, 400, 200, 100};
-const int kSamplePeriodms = 1.0 / kDefaultADCPointsPerSec * 1000;
+const int kSamplePeriodms = 1.0 / kDefaultADCPointsPerSec * 1e6 ;
 const int kNSampleRates = sizeof(kSampleRates) / sizeof(int);
 const int kADCStartChan = 2; //A1
 const int kADCEndChan = kADCStartChan + kADCChannels;
@@ -197,7 +197,7 @@ void setup()
   adc->adc0->setResolution(16);                                         // set bits of resolution
   adc->adc0->setConversionSpeed(ADC_CONVERSION_SPEED::VERY_HIGH_SPEED); // change the conversion speed
   adc->adc0->setSamplingSpeed(ADC_SAMPLING_SPEED::VERY_HIGH_SPEED);     // change the sampling speed
-  doStart(100);
+  doStart(kDefaultADCPointsPerSec);
 
 #endif // ADC_TIMER
 }
@@ -355,7 +355,7 @@ void StartSampling()
   }
 
 #ifdef INTERRUPT_TIMER
-  interruptTimer.begin(mockSampleData, kSamplePeriodms * 1000);
+  interruptTimer.begin(mockSampleData, kSamplePeriodms);
 #endif // INTERRUPT_TIMER
 
   gState = kWaitingForUSBSOF;
