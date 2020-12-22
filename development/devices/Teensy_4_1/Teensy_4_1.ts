@@ -7,15 +7,15 @@ import {
    OpenPhysicalDeviceDescriptor,
 } from '../../../public/device-api';
 import { DuplexStream } from '../../../public/device-streams';
+import { PhysicalDevice } from '../../../public/arduino-physical-device';
 import { 
    ProxyDevice,
    getDefaultSettings,
 } from './proxyDevice';
 
-import { Parser } from '../../../public/packet-parser';
-
 export const kEnableLogging = true;
 
+// Assuming we are working with the INTERRUPT_TIMER example in Teensy.ino
 export const kStreamNames = [
    'Teensy Sine Wave',
    'Teensy Square Wave'
@@ -23,51 +23,12 @@ export const kStreamNames = [
 
 
 /**
- * PhysicalDevice is a representation of the connected hardware device
+ * The device class is the set of types of device that can share the same settings so that
+ * when a recording is re-opened, Quark will try to match device proxies read from disk to
+ * available physical devices on a "best fit" match of capabilies.
+ * The DeviceClass object represents this set of devices and can find and create PhysicalDevice
+ * objects of its class, as well as the ProxyDevice objects.
  */
-export class PhysicalDevice implements OpenPhysicalDevice {
-   deviceName: string;
-   serialNumber: string;
-   deviceStream: DuplexStream;
-   parser: Parser;
-   numberOfChannels: number;
-
-   constructor(
-      private deviceClass: DeviceClass,
-      deviceStream: DuplexStream,
-      friendlyName: string,
-      versionInfo: string,
-   ) {
-      this.numberOfChannels = kStreamNames.length;
-      this.deviceStream = deviceStream;
-      this.serialNumber = JSON.parse(versionInfo).serialNumber; 
-
-      this.parser = new Parser(deviceStream, this.numberOfChannels);
-      this.deviceName = deviceClass.getDeviceClassName() + ': ' + friendlyName;
-   }
-
-   getDeviceName() {
-      return this.deviceName;
-   }
-
-   getNumberOfAnalogInputs() {
-      return this.numberOfChannels;
-   }
-
-   getNumberOfAnalogStreams() {
-      return this.numberOfChannels;
-   }
-
-   getDescriptor(): OpenPhysicalDeviceDescriptor {
-      return {
-         deviceType: this.deviceClass.getDeviceClassName(),
-         numInputs: this.getNumberOfAnalogInputs(),
-         deviceId: this.serialNumber || this.deviceStream.source.devicePath,
-      };
-   }
-}
-
-
 export class DeviceClass implements IDeviceClass {
    constructor() {
       if (kEnableLogging) console.log('DeviceClass()');
@@ -77,14 +38,16 @@ export class DeviceClass implements IDeviceClass {
       console.error(err);
    }
 
-
+   /**
+    * @returns the name of the class of devices
+    */
    getDeviceClassName(): string {
       return 'Teensy_4';
    }
 
-   // /**
-   //  * @returns a GUID to identify this object
-   //  */
+   /**
+    * @returns a GUID to identify this object
+    */
    getClassId() {
       // UUID generated using https://www.uuidgenerator.net/version1
       return '37f2a81a-380c-11eb-adc1-0242ac120002';
@@ -209,11 +172,9 @@ export class DeviceClass implements IDeviceClass {
                deviceClass,
                devStream,
                friendlyName,
-               versionInfoJSON
+               versionInfoJSON,
+               kStreamNames.length
             );
-
-            //TODO: serial number should come from the firmware JSON version info!
-            //    physicalDevice.serialNumber = connectionName;
 
             callback(null, physicalDevice);
          }

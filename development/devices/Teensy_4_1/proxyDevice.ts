@@ -19,12 +19,15 @@ import {
 import { UnitsInfoImpl } from '../../../public/device-units';
 import { Setting } from '../../../public/device-settings';
 import { StreamRingBufferImpl } from '../../../public/stream-ring-buffer';
-import { PhysicalDevice, kEnableLogging, kStreamNames } from './Teensy_4_1';
 import { Parser } from '../../../public/packet-parser';
+import { PhysicalDevice } from '../../../public/arduino-physical-device';
+import { 
+   kEnableLogging,
+   kStreamNames 
+} from './Teensy_4_1';
 
 const kMinOutBufferLenSamples = 1024;
 
-// TODO: why do we need a settings version?
 const kSettingsVersion = 1;
 
 export const kSampleRates = [100.0];
