@@ -4,8 +4,8 @@ import {
    IDeviceManagerApi,
    IUIAreaApi,
    IUIElementApi
-} from '../../public/device-api';
-import { PluginFeatureTypes } from '../../public/plugin-api';
+} from '../../../public/device-api';
+import { PluginFeatureTypes } from '../../../public/plugin-api';
 
 export class DeviceUI implements IDeviceUIApi {
    name = 'SerialSettings UI';
