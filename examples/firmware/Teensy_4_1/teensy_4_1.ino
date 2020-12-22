@@ -16,17 +16,21 @@ For a pin layout see https://www.pjrc.com/teensy-4-1-released/.
 */
 
 // One of these two timing options should be commented out.
-#define INTERRUPT_TIMER
-// #define ADC_TIMER
+// #define INTERRUPT_TIMER 
+#define ADC_TIMER
 
 #define __get_PRIMASK __get_primask
 #define __set_PRIMASK __set_primask
 
+
+#include "Arduino.h"
 #include <cmath>
 #include <vector>
-#include "src/RingBufferSized.h"
-#include "Arduino.h"
+#include <cstdint>
 #include <util/atomic.h>
+
+#include "src/RingBufferSized.h"
+#include "src/ADIPackets.h"
 
 #ifdef ADC_TIMER
 
@@ -40,7 +44,7 @@ const int readPin2 = A1;
 
 #endif // ADC_TIMER
 
-const int kADCChannels = 2;
+// const int kADCChannels = 2;
 const char *kSerialNumber = "00001";
 const char *kFWVersion = "0.0.1";
 const int ledPin = 13; // the pin with a LED
@@ -50,7 +54,7 @@ std::vector<double> gGains(kADCChannels, 1.0); // no gain set for now.
 const int kDefaultADCPointsPerSec = 100;
 int gADCPointsPerSec = kDefaultADCPointsPerSec; //~5000 max with 2 samples (1 point) per packet
 const int kSampleRates[] = {10000, 4000, 2000, 1000, 400, 200, 100};
-const int kSamplePeriodms = 1.0 / kDefaultADCPointsPerSec * 1e6 ;
+const int kSamplePeriodus = 1.0 / kDefaultADCPointsPerSec * 1e6 ;
 const int kNSampleRates = sizeof(kSampleRates) / sizeof(int);
 const int kADCStartChan = 2; //A1
 const int kADCEndChan = kADCStartChan + kADCChannels;
@@ -126,11 +130,6 @@ void mockSampleData()
 
 const int kMaxCommandLenBytes = 64;
 
-const int kPointsPerPacket = 1;
-const int kPointsPerMediumSizePacket = 10;
-
-int gADCPointsPerPacket = kPointsPerPacket;
-
 volatile int32_t gFirstADCPointus = 0;
 
 enum State
@@ -197,154 +196,17 @@ void setup()
   adc->adc0->setResolution(16);                                         // set bits of resolution
   adc->adc0->setConversionSpeed(ADC_CONVERSION_SPEED::VERY_HIGH_SPEED); // change the conversion speed
   adc->adc0->setSamplingSpeed(ADC_SAMPLING_SPEED::VERY_HIGH_SPEED);     // change the sampling speed
+
+  ///// ADC1 ////
+  adc->adc1->setAveraging(1);                                           // set number of averages
+  adc->adc1->setResolution(16);                                         // set bits of resolution
+  adc->adc1->setConversionSpeed(ADC_CONVERSION_SPEED::VERY_HIGH_SPEED); // change the conversion speed
+  adc->adc1->setSamplingSpeed(ADC_SAMPLING_SPEED::VERY_HIGH_SPEED);     // change the sampling speed
+
   doStart(kDefaultADCPointsPerSec);
 
 #endif // ADC_TIMER
 }
-
-class PacketBase
-{
-protected:
-  static uint8_t sPacketCount;
-};
-
-uint8_t PacketBase::sPacketCount = 0;
-
-class Packet : protected PacketBase
-{
-  //The header is 5 nibbles, i.e. "P\xA0\x40". The low nibble of the
-  //3rd byte is the packet time (0x04) for data packets.
-  //The head and packet type is followed by a 1 byte packet count number,
-  //making a total of 4 bytes before the payload daya that need to match the
-  //expected pattern(s) before the client can detect a packet.
-  const char sHeader[2] = {'P', 0xA0};
-
-public:
-  static void ResetPacketCount()
-  {
-    sPacketCount = 0;
-  }
-
-  Packet() : mPoint(0)
-  {
-  }
-
-  bool addSample(int chan, int16_t sample)
-  {
-    if (mPoint >= gADCPointsPerPacket)
-      return false;
-
-#ifdef ADC_TIMER
-    mData[mPoint][chan] = (sample << 4) - 0x8000;
-#endif //ADC_TIMER
-
-#ifdef INTERRUPT_TIMER
-    mData[mPoint][chan] = sample;
-#endif //
-
-    return true;
-  }
-
-  void nextPoint()
-  {
-    ++mPoint;
-  }
-
-  //returns number of bytes written
-  int write(Stream &stream) const
-  {
-    int n = stream.write(sHeader, 2);
-    //Write the packet type byte (D for data, M for medium sized data packet)
-    n += stream.write(uint8_t(gADCPointsPerPacket == 1 ? 'D' : 'M'));
-    n += stream.write(sPacketCount++);
-    n += stream.write(reinterpret_cast<const uint8_t *>(mData), sizeof(int16_t) * kADCChannels * gADCPointsPerPacket);
-    return n;
-  }
-
-protected:
-  int mPoint;
-  int16_t mData[kPointsPerMediumSizePacket][kADCChannels];
-};
-
-class TimePacket : protected PacketBase
-{
-  const char sHeaderAndPacketType[3] = {'P', 0xA0, 'N'}; //'N' for now
-
-public:
-  TimePacket(int32_t tick32us, uint8_t timeRequestNumber) : mTimeRequestNumber(timeRequestNumber)
-  {
-    mData[0] = tick32us;
-  }
-
-  int writeData(Stream &stream) const
-  {
-    int n = stream.write(sPacketCount++);
-    n += stream.write(mTimeRequestNumber);
-    n += stream.write(reinterpret_cast<const uint8_t *>(mData), sizeof(mData));
-    return n;
-  }
-
-  //returns number of bytes written
-  int write(Stream &stream) const
-  {
-    int n = stream.write(sHeaderAndPacketType, 3);
-    n += writeData(stream);
-    return n;
-  }
-
-protected:
-  int32_t mData[1];
-  uint8_t mTimeRequestNumber;
-};
-
-class LatestUSBFrameTimePacket : protected TimePacket
-{
-  const char sHeaderAndPacketType[3] = {'P', 0xA0, 'L'}; //'L' for latest USB Start Of Frame time
-
-public:
-  LatestUSBFrameTimePacket(int32_t tick32us, uint8_t timeRequestNumber, uint16_t frameNumber, int32_t latestFrameus) : TimePacket(tick32us, timeRequestNumber)
-  {
-    mFrameNumber = frameNumber;
-    mFrameTimeus = latestFrameus;
-  }
-
-  //returns number of bytes written
-  int write(Stream &stream) const
-  {
-    int n = stream.write(sHeaderAndPacketType, 3);
-    n += TimePacket::writeData(stream);
-    n += stream.write(reinterpret_cast<const uint8_t *>(&mFrameNumber), sizeof(mFrameNumber));
-    n += stream.write(reinterpret_cast<const uint8_t *>(&mFrameTimeus), sizeof(mFrameTimeus));
-    return n;
-  }
-
-protected:
-  uint16_t mFrameNumber;
-  int32_t mFrameTimeus;
-};
-
-class FirstSampleTimePacket : protected PacketBase
-{
-  const char sHeaderAndPacketType[3] = {'P', 0xA0, 'F'}; //'F' for First sample time
-
-public:
-  FirstSampleTimePacket(int32_t tick32us)
-  {
-    mData[0] = tick32us;
-  }
-
-  //returns number of bytes written
-  int write(Stream &stream) const
-  {
-    int n = stream.write(sHeaderAndPacketType, 3);
-    n += stream.write(sPacketCount++);
-    n += stream.write(reinterpret_cast<const uint8_t *>(mData), sizeof(mData));
-    return n;
-  }
-
-protected:
-  int32_t mData[1];
-};
 
 void StartSampling()
 {
@@ -355,7 +217,7 @@ void StartSampling()
   }
 
 #ifdef INTERRUPT_TIMER
-  interruptTimer.begin(mockSampleData, kSamplePeriodms);
+  interruptTimer.begin(mockSampleData, kSamplePeriodus);
 #endif // INTERRUPT_TIMER
 
   gState = kWaitingForUSBSOF;
@@ -401,7 +263,7 @@ volatile uint16_t adc_val;
 void adc0_isr()
 {
   adc_val = (int16_t)ADC1_R0;
-  int16_t iResult = adc_val;
+  int16_t iResult = (adc_val << 4) - 0x8000;
   gSampleBuffers[0].Push(iResult);
   digitalWrite(outputTestPin, gUSBBPinState = !gUSBBPinState);
 }
@@ -409,21 +271,23 @@ void adc0_isr()
 void adc1_isr()
 {
   adc_val = (int16_t)ADC2_R0;
-  int16_t iResult = adc_val;
+  int16_t iResult = (adc_val << 4) - 0x8000;
   gSampleBuffers[1].Push(iResult);
   digitalWrite(outputTestPin, gUSBBPinState = !gUSBBPinState);
 }
 
+// TODO: provide a multiplex example for when using more than 2 channels.
 void doStart(int freq)
 {
   adc->adc0->stopTimer();
   adc->adc0->startSingleRead(readPin1); // call this to setup everything before the Timer starts, differential is also possible
   adc->adc0->enableInterrupts(adc0_isr);
-  adc->adc0->startTimer(freq); //frequency in Hz
 
   adc->adc1->stopTimer();
   adc->adc1->startSingleRead(readPin2);
   adc->adc1->enableInterrupts(adc1_isr);
+
+  adc->adc0->startTimer(freq); //frequency in Hz
   adc->adc1->startTimer(freq);
 }
 
