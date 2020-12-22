@@ -40,7 +40,7 @@ export class PhysicalDevice implements OpenPhysicalDevice {
    ) {
       this.numberOfChannels = kStreamNames.length;
       this.deviceStream = deviceStream;
-      this.serialNumber = `hbhjbjhbjhbjhbjhb`; //TODO: get this
+      this.serialNumber = JSON.parse(versionInfo).serialNumber; 
 
       this.parser = new Parser(deviceStream, this.numberOfChannels);
       this.deviceName = deviceClass.getDeviceClassName() + ': ' + friendlyName;
@@ -73,11 +73,11 @@ export class DeviceClass implements IDeviceClass {
       if (kEnableLogging) console.log('DeviceClass()');
    }
 
-   // onError(err: Error): void {
-   //    console.error(err);
-   // }
+   onError(err: Error): void {
+      console.error(err);
+   }
 
-   // TODO make this a constant
+
    getDeviceClassName(): string {
       return 'Teensy_4';
    }
@@ -186,6 +186,7 @@ export class DeviceClass implements IDeviceClass {
             let versionInfo;
             try {
                versionInfo = JSON.parse(versionInfoJSON);
+               
             } catch(err) {
                console.warn('JSON error when parsing version information: ', versionInfoJSON, err.message);
 
@@ -208,7 +209,7 @@ export class DeviceClass implements IDeviceClass {
                deviceClass,
                devStream,
                friendlyName,
-               versionInfo
+               versionInfoJSON
             );
 
             //TODO: serial number should come from the firmware JSON version info!
