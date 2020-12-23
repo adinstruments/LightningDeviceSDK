@@ -28,7 +28,8 @@ import {
    IDeviceManagerApi,
    IUIAreaApi,
    DeviceProxyId,
-   TMessageSeverity
+   TMessageSeverity,
+   IDeviceProxyAPI
 } from '../../../public/device-api';
 
 import { Setting } from '../../../public/device-settings';
@@ -64,6 +65,24 @@ import { PluginFeatureTypes } from '../../../public/plugin-api';
  * 3. DeviceClass: an object that represents the device class and can find and create PhysicalDevice
  *    objects of its class, as well as the ProxyDevice objects.
  */
+
+const kSupportedSamplesPerSec = [200];
+
+export const kDefaultSamplesPerSecIndex = 0;
+export const kDefaultSamplesPerSec = kSupportedSamplesPerSec[kDefaultSamplesPerSecIndex];
+
+export function findClosestSupportedRateIndex(samplesPerSec: number) {
+   let result = kSupportedSamplesPerSec.findIndex((value) => value <= samplesPerSec);
+   if (result < 0) {
+      return kSupportedSamplesPerSec.length - 1;
+   }
+   return result;
+}
+
+export function findClosestSupportedRate(samplesPerSec: number) {
+   return kSupportedSamplesPerSec[findClosestSupportedRateIndex(samplesPerSec)];
+}
+
 
 const kDefaultCuffSwitchingInterval = 15;
 
@@ -311,8 +330,8 @@ function findVersionData(byteArray: Buffer, versionCmdKeyInd: number): string {
                // TODO: handle these better
                console.warn(
                   'CRC did not match Caculated CRC for: ' +
-                     versionCmd +
-                     ' read command'
+                  versionCmd +
+                  ' read command'
                );
             }
          }
@@ -1303,8 +1322,8 @@ class NanoParser {
                   // TODO: handle these better
                   console.warn(
                      'CRC did not match Caculated CRC for: ' +
-                        NanoRxSampCmds.kstatusCmd +
-                        ' read command'
+                     NanoRxSampCmds.kstatusCmd +
+                     ' read command'
                   );
                }
 
@@ -1365,8 +1384,8 @@ class NanoParser {
                   // TODO: handle these better
                   console.warn(
                      'CRC did not match Caculated CRC for: ' +
-                        NanoRxSampCmds.kdataCmd +
-                        ' read command'
+                     NanoRxSampCmds.kdataCmd +
+                     ' read command'
                   );
                }
 
@@ -1422,8 +1441,8 @@ class NanoParser {
                   // TODO: handle these better
                   console.warn(
                      'CRC did not match Caculated CRC for: ' +
-                        NanoRxSampCmds.kbeatCmd +
-                        ' read command'
+                     NanoRxSampCmds.kbeatCmd +
+                     ' read command'
                   );
                }
 
@@ -1484,8 +1503,8 @@ class NanoParser {
                   // TODO: handle these better
                   console.warn(
                      'CRC did not match Caculated CRC for: ' +
-                        NanoRxSampCmds.kstatusCmd +
-                        ' read command'
+                     NanoRxSampCmds.kstatusCmd +
+                     ' read command'
                   );
                }
 
@@ -1561,8 +1580,8 @@ class NanoParser {
          // TODO: handle these better
          console.warn(
             'CRC did not match Caculated CRC for: ' +
-               NanoRxSampCmds.kstatusCmd +
-               ' read command'
+            NanoRxSampCmds.kstatusCmd +
+            ' read command'
          );
       }
 
@@ -1624,15 +1643,15 @@ class NanoParser {
                ) {
                   console.error(
                      this.deviceName +
-                        ' - ' +
-                        nanoWarningsArray[nanoWarningCode]
+                     ' - ' +
+                     nanoWarningsArray[nanoWarningCode]
                   );
                   this.criticalError = true;
                } else {
                   console.warn(
                      this.deviceName +
-                        ' - ' +
-                        nanoWarningsArray[nanoWarningCode]
+                     ' - ' +
+                     nanoWarningsArray[nanoWarningCode]
                   );
                }
                this.raisedWarnings.push(nanoWarningCode);
@@ -1822,11 +1841,11 @@ export class NIBPSettings implements INIBPSettings {
 
    private static defaultRate = {
       settingName: 'Rate',
-      value: 200,
+      value: kSupportedSamplesPerSec[kDefaultSamplesPerSecIndex],
       options: [
          {
-            value: 200,
-            display: '200 Hz'
+            value: kSupportedSamplesPerSec[0],
+            display: kSupportedSamplesPerSec[0].toString() + ' Hz'
          }
       ]
    };
@@ -2303,12 +2322,13 @@ class ProxyDevice implements IProxyDevice {
     * If possible, set all this proxy's streams to closest possible rate <= samplesPerSec.
     */
    setAllChannelsSamplesPerSec(samplesPerSec: number) {
-      if (this.parser === null) {
-         this.connectToPhysicalDevice();
-      }
+      // This is bad! Might allow corruption of a device that another recording is using!
+      // if (this.parser === null) {
+      //    this.connectToPhysicalDevice();
+      // }
 
       for (const stream of this.settings.dataInStreams) {
-         stream.samplesPerSec.value = samplesPerSec;
+         stream.samplesPerSec.value = findClosestSupportedRate(samplesPerSec);
       }
 
       return true;
@@ -2404,7 +2424,7 @@ class ProxyDevice implements IProxyDevice {
          if (stream && stream.isEnabled) {
             const nSamples = Math.max(
                bufferSizeInSecs *
-                  ((stream.samplesPerSec as IDeviceSetting).value as number),
+               ((stream.samplesPerSec as IDeviceSetting).value as number),
                kMinOutBufferLenSamples
             );
             this.outStreamBuffers.push(
@@ -2518,7 +2538,7 @@ class DeviceClass implements IDeviceClass {
     * Called when the app shuts down. Chance to release any resources acquired during this object's
     * life.
     */
-   release() {}
+   release() { }
 
    /**
     * @returns the name of the class of devices
@@ -2679,8 +2699,8 @@ class NIBPNanoUI implements IDeviceUIApi {
    type: PluginFeatureTypes = 'Device UI';
 
    // We provide UI for NIBP devices.
-   matchesDevice(deviceDisplayName: string): boolean {
-      return deviceDisplayName.startsWith('NIBP');
+   matchesDevice(deviceClassGuid: string, deviceInternalName: string): boolean {
+      return deviceClassGuid === deviceClassId;
    }
 
    // Store the result of the last HCU zero operation so it can be displayed to the
@@ -2700,7 +2720,8 @@ class NIBPNanoUI implements IDeviceUIApi {
    describeDeviceSettingsUI(
       deviceSettings: IDeviceSettingsApi,
       deviceId: DeviceProxyId,
-      deviceManager: IDeviceManagerApi
+      deviceManager: IDeviceManagerApi,
+      deviceProxy?: IDeviceProxyAPI
    ): IUIAreaApi {
       const elements: IUIElementApi[] = [];
 

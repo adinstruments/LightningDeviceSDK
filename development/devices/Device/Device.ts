@@ -155,8 +155,8 @@ export function resetgSampleCountForTesting() {
  * PhysicalDevice is a representation of the connected hardware device
  */
 export class PhysicalDevice implements OpenPhysicalDevice {
-   deviceName: string;
    serialNumber: string;
+   deviceName: string;
    deviceConnection: DuplexDeviceConnection;
    parser: Parser;
    numberOfChannels: number;

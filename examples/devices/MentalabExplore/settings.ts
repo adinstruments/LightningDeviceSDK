@@ -1,8 +1,44 @@
-import { UnitPrefix, IDeviceSetting } from '../../../public/device-api';
+import {
+   UnitPrefix,
+   IDeviceSetting,
+   IDeviceProxySettingsSys,
+   IDeviceStreamApi,
+   IProxyDevice,
+   DeviceValueType,
+   IDeviceStreamConfiguration
+} from '../../../public/device-api';
 import { UnitsInfo16Bit, UnitsInfoImpl } from '../../../public/device-units';
+import { Setting } from '../../../public/device-settings';
+
+export interface IProxyDeviceImpl extends IProxyDevice {
+   settings: DeviceSettings;
+
+   /**
+    * This is an implementation method, not directly called by Quark. Exposed
+    * here so that the DeviceSettings can call it on their ProxyDevice.
+    * This updates the quark settings. ProxyDeviceSys is the connection to the
+    * proxy device in Quark.
+    *
+    * Quark will then calls the function returned by applyStreamSettingsToHW,
+    * which will send the same settings to the hardware
+    *
+    * @param {number} streamIndex
+    * @param {StreamSettings} streamSettings
+    * @param {Partial<IDeviceStreamConfiguration>} config
+    * @param {boolean} restartAnySampling
+    */
+   updateStreamSettings(
+      streamIndex: number,
+      streamSettings: IDeviceStreamApi | undefined,
+      config: Partial<IDeviceStreamConfiguration>,
+      restartAnySampling: boolean
+   ): void;
+}
+
+const kSettingsVersion = 1;
 
 const kDefaultDecimalPlaces = 3;
-const kDefaultNumExGSignals = 8;
+export const kDefaultNumExGSignals = 8;
 export const kNumberEnvironmentSignals = 3;
 
 const kNumberGyroSignals = 3;
@@ -12,19 +48,46 @@ const kNumberTempSignals = 1;
 const kNumberLightSignals = 1;
 const kNumberBatterySignals = 1;
 
-export const kNumberOrinSignals =
+export const kNumberOfOrientationSignals =
    kNumberAccSignals + kNumberGyroSignals + kNumberMagSignals;
 
-export const kDefaultSamplesPerSec = 250;
-export const kMediumRateSamplesPerSec = 500;
+//Stream index value that means the setting is the same across
+//all EXGStreams, e.g. for this device, the sample rate.
+export const kAllEXGStreams = -1;
+
 // 1000 Hz is currently experimental (23/9/2020)
-// const kHighRateSamplesPerSec = 1000;
+export const kSupportedEXGSamplesPerSec = [/*1000,*/ 500, 250];
+
+export const kDefaultEXGSamplesPerSecIndex = 1; //250 Hz
+export const kDefaultEXGSamplesPerSec =
+   kSupportedEXGSamplesPerSec[kDefaultEXGSamplesPerSecIndex];
+
+export function findClosestSupportedRateIndex(samplesPerSec: number) {
+   //Assumes kSupportedEXGSamplesPerSec is in descending order. If there is no exact match
+   //use the closest rate < samplesPerSec.
+   const result = kSupportedEXGSamplesPerSec.findIndex(
+      (value) => value <= samplesPerSec
+   );
+   if (result < 0) {
+      return kSupportedEXGSamplesPerSec.length - 1;
+   }
+   return result;
+}
+
+export function findClosestSupportedRate(samplesPerSec: number) {
+   return kSupportedEXGSamplesPerSec[
+      findClosestSupportedRateIndex(samplesPerSec)
+   ];
+}
 
 export const kOrientationSamplesPerSec = 20;
 export const kEnvironmentSamplesPerSec = 1;
 
+export const kNumberOfOtherSignals =
+   kNumberOfOrientationSignals + kNumberEnvironmentSignals;
+
 /* Setup for 8 channel device */
-export const kStreamNames = [
+export const kEEGStreamNames = [
    'EEG1',
    'EEG2',
    'EEG3',
@@ -32,7 +95,10 @@ export const kStreamNames = [
    'EEG5',
    'EEG6',
    'EEG7',
-   'EEG8',
+   'EEG8'
+];
+
+export const kOtherStreamNames = [
    'ACC X',
    'ACC Y',
    'ACC Z',
@@ -46,6 +112,15 @@ export const kStreamNames = [
    'Light',
    'Battery'
 ];
+
+export function getStreamName(signalIndex: number, totalNumberOfStreams = 20) {
+   const numberOfExGSiganls = totalNumberOfStreams - kOtherStreamNames.length;
+   if (signalIndex < numberOfExGSiganls) {
+      return kEEGStreamNames[signalIndex];
+   }
+
+   return kOtherStreamNames[signalIndex - numberOfExGSiganls];
+}
 
 /**
  *
@@ -88,6 +163,38 @@ const kUnitsForGain1 = new UnitsInfo16Bit(
    -400
 );
 
+const kUnitsForGain2 = new UnitsInfo16Bit(
+   'V', //unit name
+   UnitPrefix.kMilli, //unit prefix
+   kDefaultDecimalPlaces,
+   100,
+   -100
+);
+
+const kUnitsForGain3 = new UnitsInfo16Bit(
+   'V', //unit name
+   UnitPrefix.kMilli, //unit prefix
+   kDefaultDecimalPlaces,
+   50,
+   -50
+);
+
+const kUnitsForGain4 = new UnitsInfo16Bit(
+   'V', //unit name
+   UnitPrefix.kMicro, //unit prefix
+   kDefaultDecimalPlaces,
+   25000,
+   -25000
+);
+
+const kUnitsForGain5 = new UnitsInfo16Bit(
+   'V', //unit name
+   UnitPrefix.kMicro, //unit prefix
+   kDefaultDecimalPlaces,
+   12500,
+   -12500
+);
+
 const kUnitsForAcc = new UnitsInfo16Bit(
    ' mG', //unit name
    UnitPrefix.kNoPrefix, //unit prefix
@@ -116,23 +223,23 @@ const kUnitsForTemp = new UnitsInfoImpl(
    ' \u00B0' + 'C',
    UnitPrefix.kNoPrefix,
    1,
-   200,
-   200,
-   -20,
-   -20,
-   110,
-   0
+   255, //Max in prefixed units
+   0xff, //Max ADC
+   0, //Min in prefixed units.
+   0, //Min in ADC value.
+   255, //110, //Max valid
+   0 //Min valid
 );
 
 const kUnitsForLight = new UnitsInfoImpl(
    ' lux',
    UnitPrefix.kNoPrefix,
    3,
-   100000, // Direct sunlight. https://en.wikipedia.org/wiki/Lux
-   100000,
-   0,
-   0,
-   100000,
+   1000, //100000, Max in prefixed units. Direct sunlight is 100000. https://en.wikipedia.org/wiki/Lux
+   0x0fff, // Max in ADC values
+   0, //Min in prefixed units.
+   0, //Min in ADC value.
+   0x0fff, //100000,  //Max valid
    0
 );
 
@@ -152,6 +259,14 @@ export function unitsFromPosFullScale(posFullScale: number) {
    switch (posFullScale) {
       case kUnitsForGain1.maxInPrefixedUnits:
          return kUnitsForGain1;
+      case kUnitsForGain2.maxInPrefixedUnits:
+         return kUnitsForGain2;
+      case kUnitsForGain3.maxInPrefixedUnits:
+         return kUnitsForGain3;
+      case kUnitsForGain4.maxInPrefixedUnits:
+         return kUnitsForGain4;
+      case kUnitsForGain5.maxInPrefixedUnits:
+         return kUnitsForGain5;
       case kUnitsForAcc.maxInPrefixedUnits:
          return kUnitsForAcc;
       case kUnitsForGyro.maxInPrefixedUnits:
@@ -171,10 +286,41 @@ export function unitsFromPosFullScale(posFullScale: number) {
    return kUnitsForGain1;
 }
 
+export class DeviceSettings implements IDeviceProxySettingsSys {
+   version = kSettingsVersion;
+
+   //This device's streams all sample at the same rate
+   deviceSamplesPerSec: Setting;
+
+   numberExgSignals: number;
+
+   dataInStreams: IDeviceStreamApi[];
+
+   constructor(proxy: IProxyDeviceImpl, nEXGStreams: number) {
+      //This device's streams all sample at the same rate
+      this.numberExgSignals = nEXGStreams;
+
+      this.deviceSamplesPerSec = new Setting(
+         kDefaultExGRates,
+         (setting: IDeviceSetting, newValue: DeviceValueType) => {
+            proxy.updateStreamSettings(kAllEXGStreams, undefined, {}, true);
+            return newValue;
+         }
+      );
+
+      this.dataInStreams = getDataInStreams(this, this.numberExgSignals);
+   }
+}
+
 export function getDefaultDisabledStreamSettings(
-   numberOfExGSiganls = kDefaultNumExGSignals
+   deviceSettings: DeviceSettings,
+   numberOfExGSignals = kDefaultNumExGSignals
 ) {
-   return getDataInStreams(numberOfExGSiganls, kDefaultDisabled);
+   return getDataInStreams(
+      deviceSettings,
+      numberOfExGSignals,
+      kDefaultDisabled
+   );
 }
 
 export function getDefaultSettingsForStream(
@@ -193,6 +339,7 @@ export function getDefaultSettingsForStream(
 }
 
 export function getDataInStreams(
+   deviceSettings: DeviceSettings,
    numberOfExGSiganls = kDefaultNumExGSignals,
    enabledSetting = kDefaultEnabled
 ) {
@@ -200,7 +347,7 @@ export function getDataInStreams(
       ...getDefaultSettingsForStream(
          numberOfExGSiganls,
          kUnitsForGain1,
-         kDefaultExGRates,
+         deviceSettings.deviceSamplesPerSec,
          enabledSetting
       ),
       ...getDefaultSettingsForStream(
@@ -242,13 +389,20 @@ export function getDataInStreams(
    ];
 }
 
-export function getDefaultSettings(numberOfExGSiganls = kDefaultNumExGSignals) {
-   const kDefaultSettings = {
-      version: 1,
-      dataInStreams: getDataInStreams(numberOfExGSiganls)
-   };
+export function getDefaultSettings(
+   proxy: IProxyDeviceImpl,
+   numberOfExGSignals = kDefaultNumExGSignals
+) {
+   const kDefaultSettings = new DeviceSettings(proxy, numberOfExGSignals);
 
    return kDefaultSettings;
+
+   // const kDefaultSettings = {
+   //    version: 1,
+   //    dataInStreams: getDataInStreams(proxy.settings, numberOfExGSignals)
+   // };
+
+   // return kDefaultSettings;
 }
 
 /**
@@ -256,6 +410,37 @@ export function getDefaultSettings(numberOfExGSiganls = kDefaultNumExGSignals) {
  * Implements {IDeviceInputSettingsSys}
  */
 function getInputSettings(unitsInfo: UnitsInfo16Bit) {
+   if (unitsInfo.maxInPrefixedUnits === kUnitsForGain1.maxInPrefixedUnits) {
+      return {
+         range: {
+            settingName: 'Range',
+            value: kUnitsForGain1.maxInPrefixedUnits,
+            options: [
+               {
+                  value: kUnitsForGain1.maxInPrefixedUnits,
+                  display: kUnitsForGain1.rangeDisplayString
+               },
+               {
+                  value: kUnitsForGain2.maxInPrefixedUnits,
+                  display: kUnitsForGain2.rangeDisplayString
+               },
+               {
+                  value: kUnitsForGain3.maxInPrefixedUnits,
+                  display: kUnitsForGain3.rangeDisplayString
+               },
+               {
+                  value: kUnitsForGain4.maxInPrefixedUnits,
+                  display: kUnitsForGain4.rangeDisplayString
+               },
+               {
+                  value: kUnitsForGain5.maxInPrefixedUnits,
+                  display: kUnitsForGain5.rangeDisplayString
+               }
+            ]
+         }
+      };
+   }
+
    return {
       range: {
          settingName: 'Range',
@@ -276,20 +461,20 @@ function getInputSettings(unitsInfo: UnitsInfo16Bit) {
  */
 const kDefaultExGRates = {
    settingName: 'Rate',
-   value: kDefaultSamplesPerSec,
+   value: kDefaultEXGSamplesPerSec,
    options: [
       {
-         value: kDefaultSamplesPerSec,
-         display: kDefaultSamplesPerSec.toString() + ' Hz'
+         value: kSupportedEXGSamplesPerSec[0],
+         display: kSupportedEXGSamplesPerSec[0].toString() + ' Hz'
       },
       {
-         value: kMediumRateSamplesPerSec,
-         display: kMediumRateSamplesPerSec.toString() + ' Hz'
+         value: kSupportedEXGSamplesPerSec[1],
+         display: kSupportedEXGSamplesPerSec[1].toString() + ' Hz'
       }
       // 1000 Hz is currently experimental (23/9/2020)
       // {
-      //    value: kHighRateSamplesPerSec,
-      //    display: kHighRateSamplesPerSec.toString() + ' Hz'
+      //    value: kSupportedEXGSamplesPerSec[2],
+      //    display: kSupportedEXGSamplesPerSec[2].toString() + ' Hz'
       // }
    ]
 };

@@ -1,10 +1,10 @@
 import { Parser, ParserState } from '../../public/packet-parser';
-import { IDuplexStream } from 'libs/quark';
 
 import {
    DuplexDeviceConnection,
    IDataSink,
    IStreamBuffer,
+   IDuplexStream,
    SerialPortOptions,
    TInt64,
    TimePoint,

@@ -78,12 +78,8 @@ const kDataFormat = ~~BlockDataFormat.k16BitBlockDataFormat; // For now!
 //by the ADC on the device.
 const kTimeFromStartToFirstSampleMicroSeconds = 0;
 
-//This needs to match the default rate in the hardware after it reboots!
-const kDefaultSamplesPerSec = 100;
-
-const kSampleRates = [
-   //   20000.0,
-   //   10000.0,
+const kSupportedSamplesPerSec = [
+   10000.0,
    4000.0,
    2000.0,
    1000.0,
@@ -91,6 +87,23 @@ const kSampleRates = [
    200.0,
    100.0
 ];
+
+export const kDefaultSamplesPerSecIndex = 6;
+//This needs to match the default rate in the hardware after it reboots!
+export const kDefaultSamplesPerSec = kSupportedSamplesPerSec[kDefaultSamplesPerSecIndex];
+
+export function findClosestSupportedRateIndex(samplesPerSec: number) {
+   let result = kSupportedSamplesPerSec.findIndex((value) => value <= samplesPerSec);
+   if (result < 0) {
+      return kSupportedSamplesPerSec.length - 1;
+   }
+   return result;
+}
+
+export function findClosestSupportedRate(samplesPerSec: number) {
+   return kSupportedSamplesPerSec[findClosestSupportedRateIndex(samplesPerSec)];
+}
+
 
 const kMinOutBufferLenSamples = 1024;
 
@@ -362,7 +375,7 @@ class ParserWithSettings extends Parser {
       if (this.samplesPerSec === samplesPerSec) {
          return samplesPerSec;
       }
-      const index = kSampleRates.indexOf(samplesPerSec);
+      const index = kSupportedSamplesPerSec.indexOf(samplesPerSec);
       if (index >= 0) {
          const char = '0123456789'.charAt(index);
          this.inStream.write('~' + char + '\n');
@@ -431,28 +444,32 @@ const kDefaultRate: IDeviceSetting = {
    value: kDefaultSamplesPerSec,
    options: [
       {
-         value: kSampleRates[5],
-         display: kSampleRates[5].toString() + ' Hz'
+         value: kSupportedSamplesPerSec[0],
+         display: kSupportedSamplesPerSec[0].toString() + ' Hz'
       },
       {
-         value: kSampleRates[4],
-         display: kSampleRates[4].toString() + ' Hz'
+         value: kSupportedSamplesPerSec[1],
+         display: kSupportedSamplesPerSec[1].toString() + ' Hz'
       },
       {
-         value: kSampleRates[3],
-         display: kSampleRates[3].toString() + ' Hz'
+         value: kSupportedSamplesPerSec[2],
+         display: kSupportedSamplesPerSec[2].toString() + ' Hz'
       },
       {
-         value: kSampleRates[2],
-         display: kSampleRates[2].toString() + ' Hz'
+         value: kSupportedSamplesPerSec[3],
+         display: kSupportedSamplesPerSec[3].toString() + ' Hz'
       },
       {
-         value: kSampleRates[1],
-         display: kSampleRates[1].toString() + ' Hz'
+         value: kSupportedSamplesPerSec[4],
+         display: kSupportedSamplesPerSec[4].toString() + ' Hz'
       },
       {
-         value: kSampleRates[0],
-         display: kSampleRates[0].toString() + ' Hz'
+         value: kSupportedSamplesPerSec[5],
+         display: kSupportedSamplesPerSec[5].toString() + ' Hz'
+      },
+      {
+         value: kSupportedSamplesPerSec[6],
+         display: kSupportedSamplesPerSec[6].toString() + ' Hz'
       }
    ]
 };
@@ -826,7 +843,7 @@ class ProxyDevice implements IProxyDevice {
     */
    setAllChannelsSamplesPerSec(samplesPerSec: number): boolean {
       for (const stream of this.settings.dataInStreams) {
-         stream.samplesPerSec.value = samplesPerSec;
+         stream.samplesPerSec.value = findClosestSupportedRate(samplesPerSec);
       }
 
       return true;
@@ -851,7 +868,7 @@ class ProxyDevice implements IProxyDevice {
          if (stream && stream.isEnabled) {
             const nSamples = Math.max(
                bufferSizeInSecs *
-                  ((stream.samplesPerSec as IDeviceSetting).value as number),
+               ((stream.samplesPerSec as IDeviceSetting).value as number),
                kMinOutBufferLenSamples
             );
             this.outStreamBuffers.push(
@@ -957,13 +974,13 @@ export class DeviceClass implements IDeviceClass {
     * Called when the app shuts down. Chance to release any resources acquired during this object's
     * life.
     */
-   release(): void {}
+   release(): void { }
 
    /**
     * Required member for devices that support being run against Lightning's
     * test suite.
     */
-   clearPhysicalDevices(): void {}
+   clearPhysicalDevices(): void { }
 
    onError(err: Error): void {
       console.error(err);

@@ -512,7 +512,7 @@ export interface ProxyDeviceSys {
    ): void;
 }
 
-//Data stream configuration information Quark looks for in the
+//Data stream configuration information Quark looks for in the 
 //configuration parameter passed to ProxyDeviceSys.setupDataInStream()
 export interface IDeviceStreamConfiguration {
    dataFormat: BlockDataFormat;
@@ -661,7 +661,7 @@ export enum SysStreamEventType {
 
 export interface IDeviceProxyAPI {
    /**
-    * Invokes an arbitrary function on the JS ProxyDevice on the devices thread.
+    * Invokes an arbitrary function on the JS ProxyDevice on the devices thread. 
     * This is a general mechanism whereby user actions done
     * on the main (UI) thread can be applied down to the device script.
     *
@@ -671,7 +671,7 @@ export interface IDeviceProxyAPI {
     */
 
    /**
-    * Invokes an arbitrary function on the JS ProxyDevice on the devices thread.
+    * Invokes an arbitrary function on the JS ProxyDevice on the devices thread. 
     * This is a general mechanism whereby user actions done
     * on the main (UI) thread can be applied down to the device script.
     *
@@ -685,7 +685,10 @@ export interface IDeviceProxyAPI {
       functionArgJson: string,
       checkExistsOnly?: boolean
    ): Promise<Record<string, any> | null>;
+
 }
+
+
 
 export interface IDeviceManagerApi {
    dispose(): void;
@@ -756,7 +759,7 @@ export interface IDeviceManagerApi {
    ): void;
 
    /**
-    * Deprecated! Use the simpler and more general IDeviceProxyAPI.callFunction() instead!
+    * Deprecated! Use the simpler and more general IDeviceProxyAPI.callFunction() instead! 
     * Invokes an arbitrary function somewhere within the device manager settings
     * on the devices thread. This is the general mechanism whereby user actions done
     * on the main (UI) thread are applied down to the device hardware.
@@ -795,7 +798,7 @@ export interface IDataSink {
    ): void;
    onPacket?(packetType: unknown, buffer: unknown): void;
    onError(err: Error): void;
-   inputToStream?: number[]; //mapping from device inputs to device output streams
+   inputToStream?: number[];  //mapping from device inputs to device output streams
 }
 
 //The JS part of the ProxyDevice called from Quark

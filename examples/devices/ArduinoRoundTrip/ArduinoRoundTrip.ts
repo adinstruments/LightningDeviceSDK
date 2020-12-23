@@ -74,12 +74,7 @@ const kSettingsVersion = 1;
 
 const kDataFormat = ~~BlockDataFormat.k16BitBlockDataFormat; // For now!
 
-//This needs to match the default rate in the hardware after it reboots!
-const kDefaultSamplesPerSec = 100;
-
-const kSampleRates = [
-   //   16000.0,
-   //   8000.0,
+const kSupportedSamplesPerSec = [
    10000.0,
    4000.0,
    2000.0,
@@ -88,6 +83,25 @@ const kSampleRates = [
    200.0,
    100.0
 ];
+
+const kDefaultSamplesPerSecIndex = 6;
+//This needs to match the default rate in the hardware after it reboots!
+const kDefaultSamplesPerSec = kSupportedSamplesPerSec[kDefaultSamplesPerSecIndex];
+
+function findClosestSupportedRateIndex(samplesPerSec: number) {
+   let result = kSupportedSamplesPerSec.findIndex((value) => value <= samplesPerSec);
+   if (result < 0) {
+      return kSupportedSamplesPerSec.length - 1;
+   }
+   return result;
+}
+
+function findClosestSupportedRate(samplesPerSec: number) {
+   return kSupportedSamplesPerSec[findClosestSupportedRateIndex(samplesPerSec)];
+}
+
+const kAllStreams = -1; //Stream index value that means the setting is the same across 
+//all streams, e.g. for this device, the sample rate. 
 
 const kMinOutBufferLenSamples = 1024;
 
@@ -332,13 +346,19 @@ class StreamSettings implements IDeviceStreamApiImpl {
          }
       );
 
-      this.samplesPerSec = new Setting(
-         settingsData.samplesPerSec,
-         (setting: IDeviceSetting, newValue: DeviceValueType) => {
-            proxy.updateStreamSettings(streamIndex, this, {});
-            return newValue;
-         }
-      );
+      if (!proxy.settings.deviceSamplesPerSec) {
+         proxy.settings.deviceSamplesPerSec = new Setting(
+            settingsData.samplesPerSec,
+            (setting: Setting, newValue: DeviceValueType) => {
+               //Coerce the setting's internal value to the supported rate before updating Quark
+               setting._value = findClosestSupportedRate(newValue as number);
+               proxy.updateStreamSettings(kAllStreams, this, {});
+               return newValue;
+            }
+         );
+      }
+
+      this.samplesPerSec = proxy.settings.deviceSamplesPerSec as Setting;
    }
 }
 
@@ -382,7 +402,7 @@ class ParserWithSettings extends Parser {
       if (this.samplesPerSec === samplesPerSec) {
          return samplesPerSec;
       }
-      const index = kSampleRates.indexOf(samplesPerSec);
+      const index = kSupportedSamplesPerSec.indexOf(samplesPerSec);
       if (index >= 0) {
          const char = '0123456789'.charAt(index);
          this.inStream.write('~' + char + '\n');
@@ -451,55 +471,79 @@ const kDefaultRate: IDeviceSetting = {
    value: kDefaultSamplesPerSec,
    options: [
       {
-         value: kSampleRates[6],
-         display: kSampleRates[6].toString() + ' Hz'
+         value: kSupportedSamplesPerSec[0],
+         display: kSupportedSamplesPerSec[0].toString() + ' Hz'
       },
       {
-         value: kSampleRates[5],
-         display: kSampleRates[5].toString() + ' Hz'
+         value: kSupportedSamplesPerSec[1],
+         display: kSupportedSamplesPerSec[1].toString() + ' Hz'
       },
       {
-         value: kSampleRates[4],
-         display: kSampleRates[4].toString() + ' Hz'
+         value: kSupportedSamplesPerSec[2],
+         display: kSupportedSamplesPerSec[2].toString() + ' Hz'
       },
       {
-         value: kSampleRates[3],
-         display: kSampleRates[3].toString() + ' Hz'
+         value: kSupportedSamplesPerSec[3],
+         display: kSupportedSamplesPerSec[3].toString() + ' Hz'
       },
       {
-         value: kSampleRates[2],
-         display: kSampleRates[2].toString() + ' Hz'
+         value: kSupportedSamplesPerSec[4],
+         display: kSupportedSamplesPerSec[4].toString() + ' Hz'
       },
       {
-         value: kSampleRates[1],
-         display: kSampleRates[1].toString() + ' Hz'
+         value: kSupportedSamplesPerSec[5],
+         display: kSupportedSamplesPerSec[5].toString() + ' Hz'
       },
       {
-         value: kSampleRates[0],
-         display: kSampleRates[0].toString() + ' Hz'
+         value: kSupportedSamplesPerSec[6],
+         display: kSupportedSamplesPerSec[6].toString() + ' Hz'
       }
    ]
 };
 
-function getDefaultSettings(nStreams: number) {
-   const kDefaultSettings = {
-      version: kSettingsVersion,
-      dataInStreams: kStreamNames.slice(0, nStreams).map(() => ({
+
+class DeviceSettings implements IDeviceProxySettingsSys {
+   version = kSettingsVersion;
+
+   //This device's streams all sample at the same rate
+   deviceSamplesPerSec: Setting;
+
+   dataInStreams: IDeviceStreamApi[];
+
+   constructor(proxy: ProxyDevice, nStreams: number) {
+
+      //This device's streams all sample at the same rate
+      this.deviceSamplesPerSec = new Setting(
+         kDefaultRate,
+         (setting: IDeviceSetting, newValue: DeviceValueType) => {
+            proxy.updateStreamSettings(kAllStreams, undefined, {});
+            return newValue;
+         }
+      );
+
+
+      this.dataInStreams = kStreamNames.slice(0, nStreams).map(() => ({
          enabled: kDefaultEnabled,
          inputSettings: kDefaultInputSettings,
-         samplesPerSec: kDefaultRate
-      }))
-   };
+         samplesPerSec: this.deviceSamplesPerSec
+      }));
+
+   }
+}
+
+function getDefaultSettings(proxy: ProxyDevice, nStreams: number) {
+   const kDefaultSettings = new DeviceSettings(proxy, nStreams);
 
    return kDefaultSettings;
 }
 
-function getDefaultDisabledStreamSettings() {
-   const result = {
-      enabled: kDefaultDisabled,
-      inputSettings: kDefaultInputSettings,
-      samplesPerSec: kDefaultRate
+function getDefaultDisabledStreamSettings(settings: DeviceSettings) {
+   const result = new class {
+      enabled = kDefaultDisabled;
+      inputSettings = kDefaultInputSettings;
+      samplesPerSec = settings.deviceSamplesPerSec;
    };
+
    return result;
 }
 
@@ -510,7 +554,7 @@ class ProxyDevice implements IProxyDevice {
    /**
     * Any state within "settings" will be saved / loaded by the application.
     */
-   settings: IDeviceProxySettingsSys;
+   settings: DeviceSettings;
 
    lastError: Error | null;
 
@@ -540,8 +584,12 @@ class ProxyDevice implements IProxyDevice {
    constructor(
       quarkProxy: ProxyDeviceSys | null,
       physicalDevice: PhysicalDevice | null,
-      settings: IDeviceProxySettingsSys
+      settings?: IDeviceProxySettingsSys
    ) {
+      if (!settings) {
+         const nStreams = physicalDevice ? physicalDevice.numberOfChannels : 1;
+         settings = getDefaultSettings(this, nStreams);
+      }
       this.outStreamBuffers = [];
       this.proxyDeviceSys = quarkProxy;
       this.physicalDevice = physicalDevice;
@@ -582,8 +630,8 @@ class ProxyDevice implements IProxyDevice {
       const nDefaultStreams = this.physicalDevice
          ? this.physicalDevice.numberOfChannels
          : settingsData.dataInStreams.length;
-      const defaultSettings = getDefaultSettings(nDefaultStreams);
-      this.settings = getDefaultSettings(nDefaultStreams);
+      const defaultSettings = getDefaultSettings(this, nDefaultStreams);
+      this.settings = getDefaultSettings(this, nDefaultStreams);
       this.settings.dataInStreams = [];
 
       const nDeviceStreams = this.physicalDevice
@@ -595,7 +643,7 @@ class ProxyDevice implements IProxyDevice {
 
       console.log('nStreams =', nStreams);
 
-      const defaultDisabledStreamSettings = getDefaultDisabledStreamSettings();
+      const defaultDisabledStreamSettings = getDefaultDisabledStreamSettings(this.settings);
 
       // Ensure the settings have the correct number of data in streams for the current physical
       // device. This logic is complicated by the fact we support physical devices having different
@@ -669,20 +717,34 @@ class ProxyDevice implements IProxyDevice {
 
    updateStreamSettings(
       streamIndex: number,
-      streamSettings: StreamSettings,
+      streamSettings: StreamSettings | undefined,
       config: Partial<IDeviceStreamConfiguration>,
       restartAnySampling = true
    ) {
       if (this.proxyDeviceSys) {
-         this.proxyDeviceSys.setupDataInStream(
-            streamIndex,
-            streamSettings,
-            config,
-            this.applyStreamSettingsToHW(streamIndex, streamSettings),
-            restartAnySampling
-         );
+         if (streamIndex === kAllStreams) {
+            for (let i = 0; i < this.settings.dataInStreams.length; ++i) {
+               const stream = this.settings.dataInStreams[i] as StreamSettings;
+               this.proxyDeviceSys.setupDataInStream(
+                  i,
+                  stream,
+                  config,
+                  this.applyStreamSettingsToHW(i, stream),
+                  restartAnySampling
+               );
+            }
+         } else if (streamSettings) {
+            this.proxyDeviceSys.setupDataInStream(
+               streamIndex,
+               streamSettings,
+               config,
+               this.applyStreamSettingsToHW(streamIndex, streamSettings),
+               restartAnySampling
+            );
+         }
       }
    }
+
 
    //TODO: pass the actual setting that changed
    //Note this is a curried function so it can be called by Quark on the main JS thread after sampling has stopped, if needed.
@@ -855,7 +917,7 @@ class ProxyDevice implements IProxyDevice {
     */
    setAllChannelsSamplesPerSec(samplesPerSec: number): boolean {
       for (const stream of this.settings.dataInStreams) {
-         stream.samplesPerSec.value = samplesPerSec;
+         stream.samplesPerSec.value = findClosestSupportedRate(samplesPerSec);
       }
 
       return true;
@@ -1176,13 +1238,9 @@ export class DeviceClass implements IDeviceClass {
       physicalDevice: OpenPhysicalDevice | null
    ): ProxyDevice {
       const physicalTestDevice = physicalDevice as PhysicalDevice | null;
-      const nStreams = physicalTestDevice
-         ? physicalTestDevice.numberOfChannels
-         : 1;
       return new ProxyDevice(
          quarkProxy,
-         physicalTestDevice,
-         getDefaultSettings(nStreams)
+         physicalTestDevice
       );
    }
 

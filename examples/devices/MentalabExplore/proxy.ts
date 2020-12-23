@@ -1,5 +1,4 @@
 import {
-   IProxyDevice,
    IDeviceProxySettingsSys,
    StreamRingBuffer,
    ProxyDeviceSys,
@@ -21,15 +20,21 @@ import { kEnableLogging } from './enableLogging';
 import { CommandPacketOp, Parser } from './parser';
 import { PhysicalDevice } from './physicalDevice';
 import {
+   IProxyDeviceImpl,
+   DeviceSettings,
    getDefaultDisabledStreamSettings,
    getDefaultSettings,
-   kDefaultSamplesPerSec,
-   kEnvironmentSamplesPerSec,
-   kMediumRateSamplesPerSec,
-   kNumberOrinSignals,
    kOrientationSamplesPerSec,
-   kStreamNames,
-   unitsFromPosFullScale
+   kEnvironmentSamplesPerSec,
+   kNumberOfOrientationSignals,
+   getStreamName,
+   unitsFromPosFullScale,
+   kSupportedEXGSamplesPerSec,
+   findClosestSupportedRate,
+   findClosestSupportedRateIndex,
+   kAllEXGStreams,
+   kDefaultNumExGSignals,
+   kNumberEnvironmentSignals
 } from './settings';
 import { PacketType } from './utils';
 
@@ -45,11 +50,11 @@ function getDataFormat() {
  *
  * Implements {ProxyDevice}
  */
-export class ProxyDevice implements IProxyDevice {
+export class ProxyDevice implements IProxyDeviceImpl {
    /**
     * Any state within "settings" will be saved / loaded by the application.
     */
-   settings: IDeviceProxySettingsSys;
+   settings: DeviceSettings;
 
    lastError: Error | null;
 
@@ -60,6 +65,8 @@ export class ProxyDevice implements IProxyDevice {
     * There is a buffer for each device stream
     */
    outStreamBuffers: StreamRingBuffer[];
+
+   inputToStream?: number[]; //mapping from device inputs to device output streams
 
    physicalDevice: PhysicalDevice | null;
    proxyDeviceSys: ProxyDeviceSys | null;
@@ -77,9 +84,10 @@ export class ProxyDevice implements IProxyDevice {
    constructor(
       proxyDeviceSys: ProxyDeviceSys | null,
       physicalDevice: PhysicalDevice | null,
-      settings: IDeviceProxySettingsSys = getDefaultSettings()
+      settings?: IDeviceProxySettingsSys
    ) {
       if (kEnableLogging) console.log('Constructing Proxy', settings);
+
       /**
        * Any state within "settings" will be saved / loaded by the application.
        */
@@ -105,52 +113,101 @@ export class ProxyDevice implements IProxyDevice {
       this.initializeSettings(settings);
    }
 
+   numberOfEXGStreams() {
+      return this.settings.numberExgSignals;
+   }
+
+   isEXGStream(streamIndex: number) {
+      return streamIndex < this.numberOfEXGStreams();
+   }
+
+   isOrientationStream(streamIndex: number) {
+      return (
+         streamIndex >= this.numberOfEXGStreams() &&
+         streamIndex < this.numberOfEXGStreams() + kNumberOfOrientationSignals
+      );
+   }
+
+   streamToInput(streamIndex: number) {
+      if (!this.inputToStream) return -1;
+      return this.inputToStream.indexOf(streamIndex);
+   }
+
    /**
     * Called for both new and existing recordings. Initialize all settings
     * for this device that are to be saved in the recording.
     */
-   initializeSettings(settingsData: IDeviceProxySettingsSys) {
-      const numberOfExGSignals = this.parser
-         ? this.parser.numberExgSignals
-         : undefined;
-      const defaultSettings = getDefaultSettings(numberOfExGSignals);
-      this.settings = getDefaultSettings(numberOfExGSignals);
+   initializeSettings(settingsDataIn?: IDeviceProxySettingsSys) {
+      const physicalDevice = this.physicalDevice;
+      const nDeviceEXGInputs = physicalDevice
+         ? physicalDevice.parser.numberExgSignals
+         : kDefaultNumExGSignals;
+
+      const nDeviceInputs = physicalDevice
+         ? physicalDevice.getNumberOfAnalogStreams()
+         : kDefaultNumExGSignals +
+           kNumberOfOrientationSignals +
+           kNumberEnvironmentSignals;
+
+      const deviceSettingsIn = settingsDataIn as DeviceSettings;
+      const nSettingsEXGSignals = deviceSettingsIn
+         ? deviceSettingsIn.numberExgSignals
+         : nDeviceEXGInputs;
+
+      const defaultInputSettings = getDefaultSettings(this, nDeviceEXGInputs);
+      const settingsData = deviceSettingsIn
+         ? deviceSettingsIn
+         : defaultInputSettings;
+
+      this.settings = getDefaultSettings(this, nSettingsEXGSignals);
 
       this.settings.dataInStreams = [];
-
-      const nDeviceStreams = this.physicalDevice
-         ? this.physicalDevice.getNumberOfAnalogStreams()
-         : 0;
-
-      const nSettingsStreams = settingsData.dataInStreams.length;
-
-      const nStreams = Math.max(nSettingsStreams, nDeviceStreams);
+      this.inputToStream = []; //mapping from device inputs to device output streams
 
       const defaultDisabledStreamSettings = getDefaultDisabledStreamSettings(
-         numberOfExGSignals
+         this.settings,
+         nSettingsEXGSignals
       );
+
+      /**
+       * Initialise inputToStream mapping
+       * Two combinations that are not one to one:
+       *    1. 8 (Exg) stream settings with 4 (Exg) input device - tell Quark to disable streams [4,8)
+       *    2. 4 (Exg) stream settings with 8 (Exg) input device - tell parser to disable inputs [4,8)
+       *
+       * The inputToStream lookup table needs to be the same length as the number of inputs on the current
+       * device (16 or 20). Disabled inputs are marked by setting their inputToStream to -1.
+       *
+       */
+
+      let input = 0;
+      for (let stream = 0; input < nDeviceEXGInputs; ++stream, ++input) {
+         if (stream < nSettingsEXGSignals) this.inputToStream.push(stream);
+         else this.inputToStream.push(-1); //case 2: tell parser to disable inputs [4,8)
+      }
+
+      for (
+         let stream = nSettingsEXGSignals;
+         input < nDeviceInputs;
+         ++stream, ++input
+      ) {
+         this.inputToStream.push(stream);
+      }
 
       /* 
          Ensure the settings have the correct number of `dataInStreams` for 
          the current physical device. This logic is complicated by the fact we fake up physical devices having different stream counts for testing purposes.
          */
-      for (let streamIndex = 0; streamIndex < nStreams; ++streamIndex) {
-         const defaultStreamSettingsData =
-            defaultSettings.dataInStreams[streamIndex] ||
-            defaultDisabledStreamSettings[streamIndex];
+      for (
+         let streamIndex = 0;
+         streamIndex < settingsData.dataInStreams.length;
+         ++streamIndex
+      ) {
+         const streamSettingsData = settingsData.dataInStreams[streamIndex];
+         const inputIndex = this.streamToInput(streamIndex);
 
-         let streamSettingsData = settingsData.dataInStreams[streamIndex];
-
-         /*
-            Use disabled settings if the stream is beyond the end of the number 
-            stored in the settings or is beyond the number supported by the current physical device.
-         */
-         if (!streamSettingsData) {
-            // There are no existing settings for this stream for this hardware
-            streamSettingsData = defaultDisabledStreamSettings[streamIndex];
-         } else if (streamIndex >= defaultSettings.dataInStreams.length) {
-            // There is an existing setting for a stream not supported by the current hardware.
-            // Keep the settings but disable the stream.
+         if (inputIndex < 0) {
+            //Current hardware does not support this input
             streamSettingsData.enabled.value = false;
          } else {
             /* 
@@ -159,22 +216,30 @@ export class ProxyDevice implements IProxyDevice {
                so it will sample with the new device.
             */
             streamSettingsData.enabled =
-               defaultSettings.dataInStreams[streamIndex].enabled;
+               defaultInputSettings.dataInStreams[inputIndex].enabled;
          }
-         //If multiple streams share the hardware input they should reference the same InputSettings object
-         const inputIndex = streamIndex; //Default to 1 to 1
+
+         const defaultStreamSettings =
+            defaultInputSettings.dataInStreams[inputIndex] ||
+            defaultDisabledStreamSettings[streamIndex];
+
+         //If multiple streams share the same hardware input they should reference the same InputSettings object.
+         //But this is not the case for Mentalab devices, so use a 1 to 1 mapping.
+         const hwInputIndex = streamIndex;
+
          const streamSettings = new StreamSettings(
             this,
             streamIndex,
-            inputIndex,
-            defaultStreamSettingsData
+            hwInputIndex,
+            defaultStreamSettings
          );
          streamSettings.inputSettings = new InputSettings(
             this,
             inputIndex,
             streamSettings,
-            defaultStreamSettingsData.inputSettings
+            defaultStreamSettings.inputSettings
          );
+
          //Assign values not (old) options!
          streamSettings.setValues(streamSettingsData);
 
@@ -205,18 +270,39 @@ export class ProxyDevice implements IProxyDevice {
     */
    updateStreamSettings(
       streamIndex: number,
-      streamSettings: StreamSettings,
+      streamSettingsIn: StreamSettings | undefined,
       config: Partial<IDeviceStreamConfiguration>,
       restartAnySampling = true
    ) {
       if (this.proxyDeviceSys) {
-         this.proxyDeviceSys.setupDataInStream(
-            streamIndex,
-            streamSettings,
-            config,
-            this.applyStreamSettingsToHW(streamIndex, streamSettings),
-            restartAnySampling
-         );
+         if (streamIndex === kAllEXGStreams) {
+            //const nEXGStreams = this.parser.numberExgSignals;
+            const nEXGStreams = this.numberOfEXGStreams();
+            for (let i = 0; i < nEXGStreams; ++i) {
+               const streamSettings = this.settings.dataInStreams[
+                  i
+               ] as StreamSettings;
+               if (streamSettings)
+                  this.proxyDeviceSys.setupDataInStream(
+                     i,
+                     streamSettings,
+                     config,
+                     this.applyStreamSettingsToHW(i, streamSettings),
+                     restartAnySampling
+                  );
+               else this.proxyDeviceSys.setupDataInStream(i); //disabled stream
+            }
+         } else if (streamSettingsIn) {
+            this.proxyDeviceSys.setupDataInStream(
+               streamIndex,
+               streamSettingsIn,
+               config,
+               this.applyStreamSettingsToHW(streamIndex, streamSettingsIn),
+               restartAnySampling
+            );
+         } else {
+            this.proxyDeviceSys.setupDataInStream(streamIndex); //disabled stream
+         }
       }
    }
 
@@ -259,16 +345,19 @@ export class ProxyDevice implements IProxyDevice {
 
             // Only apply changes for one channel, since they are eeg-wide;
             if (streamIndex === 0) {
-               if (samplesPerSec === kDefaultSamplesPerSec) {
-                  this.parser.sendCommand(CommandPacketOp.setSampleRate, 1);
-               } else if (samplesPerSec === kMediumRateSamplesPerSec) {
-                  this.parser.sendCommand(CommandPacketOp.setSampleRate, 2);
-                  // 1000 Hz is currently experimental (23/9/2020)
-                  // } else if (samplesPerSec === kHighRateSamplesPerSec) {
-                  //    this.parser.sendCommand(CommandPacketOp.setSampleRate, 3);
-               } else {
-                  console.warn('Unexpected sample rate request');
-               }
+               const rateIndex = findClosestSupportedRateIndex(samplesPerSec);
+               this.parser.sendCommand(
+                  CommandPacketOp.setSampleRate,
+                  kSupportedEXGSamplesPerSec.length - rateIndex
+               );
+            }
+
+            // Set gain on parser
+            if (streamIndex < this.numberOfEXGStreams()) {
+               this.parser.setGain(
+                  streamIndex,
+                  streamSettings.inputSettings.range.asNumber
+               );
             }
          }
       };
@@ -288,10 +377,11 @@ export class ProxyDevice implements IProxyDevice {
 
       for (let streamIndex = 0; streamIndex < nDeviceStreams; ++streamIndex) {
          const stream = this.settings.dataInStreams[streamIndex];
-         this.applyStreamSettingsToHW(streamIndex, stream as StreamSettings)(
-            null,
-            SysStreamEventType.kApplyStreamSettingsToHardware
-         );
+         if (stream)
+            this.applyStreamSettingsToHW(streamIndex, stream as StreamSettings)(
+               null,
+               SysStreamEventType.kApplyStreamSettingsToHardware
+            );
       }
    }
 
@@ -443,7 +533,7 @@ export class ProxyDevice implements IProxyDevice {
 
       if (this.physicalDevice) {
          this.parser = this.physicalDevice.parser;
-         this.parser.setProxyDevice(this);
+         this.parser.setProxyDevice(this, this.settings.numberExgSignals);
          if (kEnableLogging)
             console.log('Sending complete settings to hardware device');
 
@@ -475,19 +565,21 @@ export class ProxyDevice implements IProxyDevice {
    setAllChannelsSamplesPerSec(samplesPerSec: number) {
       if (kEnableLogging) console.log('Set all channels samples per second');
 
-      if (!this.parser) return true;
+      const nEXGStreams = this.numberOfEXGStreams();
 
       for (let i = 0; i < this.settings.dataInStreams.length; i++) {
-         if (i >= this.parser.numberExgSignals + kNumberOrinSignals) {
+         if (i >= nEXGStreams + kNumberOfOrientationSignals) {
             this.settings.dataInStreams[
                i
             ].samplesPerSec.value = kEnvironmentSamplesPerSec;
-         } else if (i >= this.parser.numberExgSignals) {
+         } else if (i >= nEXGStreams) {
             this.settings.dataInStreams[
                i
             ].samplesPerSec.value = kOrientationSamplesPerSec;
          } else {
-            this.settings.dataInStreams[i].samplesPerSec.value = samplesPerSec;
+            this.settings.dataInStreams[
+               i
+            ].samplesPerSec.value = findClosestSupportedRate(samplesPerSec);
          }
       }
 
@@ -657,7 +749,7 @@ export class ProxyDevice implements IProxyDevice {
          console.log('marker packet found');
          this.proxyDeviceSys &&
             this.proxyDeviceSys.onDeviceEvent(
-               DeviceEvent.kDeviceEventNoUI,
+               DeviceEvent.kDeviceEvent,
                this.getDeviceName(),
                `Mentalab marker ${buffer}`,
                {
@@ -705,26 +797,56 @@ class StreamSettings implements IDeviceStreamApi {
       inputIndex: number,
       settingsData: IDeviceStreamApi
    ) {
-      this.streamName = kStreamNames[streamIndex];
+      const numberOfStreams = proxy.physicalDevice
+         ? proxy.physicalDevice.numberOfChannels
+         : undefined;
+      this.streamName = getStreamName(streamIndex, numberOfStreams);
 
       this.mInputIndex = inputIndex;
 
       //enabled by default for now!
       this.enabled = new Setting(
          settingsData.enabled,
-         (setting: IDeviceSetting, newValue: DeviceValueType) => {
+         (setting: Setting, newValue: DeviceValueType) => {
             proxy.updateStreamSettings(streamIndex, this, {}); //N.B. newValue has already been set on value prop
             return newValue;
          }
       );
 
-      this.samplesPerSec = new Setting(
-         settingsData.samplesPerSec,
-         (setting: IDeviceSetting, newValue: DeviceValueType) => {
-            proxy.updateStreamSettings(streamIndex, this, {});
-            return newValue;
-         }
-      );
+      if (!proxy.settings.deviceSamplesPerSec) {
+         proxy.settings.deviceSamplesPerSec = new Setting(
+            settingsData.samplesPerSec,
+            (setting: Setting, newValue: DeviceValueType) => {
+               //Coerce the setting's internal value to the supported rate before updating Quark
+               setting._value = findClosestSupportedRate(newValue as number);
+               proxy.updateStreamSettings(kAllEXGStreams, this, {});
+               return newValue;
+            }
+         );
+      }
+
+      if (proxy.isEXGStream(streamIndex)) {
+         //These share the same setting
+         this.samplesPerSec = proxy.settings.deviceSamplesPerSec as Setting;
+      } else if (proxy.isOrientationStream(streamIndex)) {
+         this.samplesPerSec = new Setting( //kDefaultOrientationRate;
+            settingsData.samplesPerSec,
+            (setting: Setting, newValue: DeviceValueType) => {
+               setting._value = kOrientationSamplesPerSec;
+               proxy.updateStreamSettings(streamIndex, this, {});
+               return newValue;
+            }
+         );
+      } else {
+         this.samplesPerSec = new Setting(
+            settingsData.samplesPerSec,
+            (setting: Setting, newValue: DeviceValueType) => {
+               setting._value = kEnvironmentSamplesPerSec;
+               proxy.updateStreamSettings(streamIndex, this, {});
+               return newValue;
+            }
+         );
+      }
    }
 
    //If multiple streams share the hardware input they should reference the same InputSettings object
