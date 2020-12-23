@@ -14,10 +14,12 @@ First, let's create a file in `./development/devices/YourDeviceName/YourDeviceNa
 
 ![empty-plugin](images/empty-plugin.png)
 
+The filename (excluding the file extension) much match the directory/folder name.
 
 And, with `npm run watch` continuing to run in the terminal, we can check that a `.ts` file has been automatically generated in `Documents`
 
-![documents](images/documents.png)
+<image rel="preload" src="images/documents.png" alt="documents" as="font" type="font/woff2" crossorigin="anonymous">
+<!-- ![documents](images/documents.png) -->
 
 Any device plugin file must implement a `DeviceClass`. You can find out more about this class in the example files, but essentially it represents all devices of a type or class. Lightning creates a list of these and compares them with those devices attached to a computer.
 
@@ -44,7 +46,7 @@ In VS Code it should look like this:
 ![first-code](images/first-code.png)
 
 
-If we reload Lightning, and have the dev tools open, we can see this in the console:
+If we reload Lightning, and have the dev tools open, we can see our log in the console:
 
 ![compile-message](images/compile-message.png)
 
@@ -58,11 +60,11 @@ Here is the Windows location:
 
 ![compiled-plugins](images/compiled-plugins.png)
 
-However, if we were to attempt to connect our device we would find that this plugin file is incomplete. We can find out more if we click on the `Manage plugins` button, on the bottom-right of Lightning.
+However, if we were to run Lightning and attempt to connect our device we would find that this plugin file is incomplete. We can find out more if we click on the `Manage plugins` button, on the bottom-right of Lightning.
 
 ![click-managed-plugins](images/click-managed-plugins.png)
 
-We can see that `YourDeviceName` has not loaded. We can further click on the `Show more` or ellipsis button.
+We can see that `YourDeviceName` has an incomplete device implementation. We can further click on the `Show more` ellipsis button.
 
 ![show-more](images/show-more.png)
 
@@ -70,21 +72,43 @@ A new tab appears with an error message:
 
 ![error-message](images/error-message.png)
 
-As you develop your plugin this will be a useful place to check for errors.
+As you develop your plugin this will be a useful place to check for errors. However, as you make changes remember to reload Lightning.
 
-[Here](OVERVIEW.md), you can see the structure of a device plugin file.  
-  
+In this case we see the message "Plugin device implementation is incomplete". Device Class must implement the IDeviceClass interface. In VS Code we will update our simple example by adding this interface to our class defintion. You can find this and other interfaces in [public/device-api.ts](public/device-api.ts):
+
+![device-api](images/device-api.png)
+
+<br/>
+
+The next step then is implement this interface:
+
+<br/>
+
+```ts
+import { IDeviceClass } from '../../../public/device-api';
+
+export class DeviceClass implements IDeviceClass {
+
+    constructor() {
+        console.log('In the constructor');
+    }
+}
+
+module.exports = {
+    getDeviceClasses() {
+       return [new DeviceClass()];
+    }
+};
+```
+
+You can auto import with VS Code by placing your cursor on the `IDeviceClass` and using ctrl + space. However, please make sure you interface is being imported from `../../../public/device-api`, and not `public/device-api`. 
+
+In VS Code there are several ways to open this interface. Two options:
+ - right click on `IDeviceClass` and then click on 'Go to definition' from the resulting context menu.
+ - clicking `IDeviceClass` and then ctrl + left-click (command + left click on Mac).
+
+There are many other device plug in requirements. [Here](OVERVIEW.md), you can learn about the structure of a device plugin file.  
 
 
-
-<!-- 
-
-In this case we have not correctly implemented the IDeviceClass interface. You can find this and other interfaces in `device-api.ts`:
-
-![device-api](images/device-api.png) -->
-
-
-
-
-Note: **The LightningDeviceSDK is currently under development and is subject to change.**
+**\*\*The LightningDeviceSDK is currently under development and is subject to change.\*\***
 

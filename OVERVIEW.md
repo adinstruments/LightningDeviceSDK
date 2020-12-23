@@ -1,76 +1,159 @@
 # LightningDeviceSDK Overview
-
-**The LightningDeviceSDK is currently under development and is subject to change.**
+**\*\*The LightningDeviceSDK is currently under development and is subject to change.\*\***
 
 ## LabChart Lightning Device Plugins
 
-A Lightning device plugin is defined via a single Typescript (.ts) file located in a specific folder that LabChart Lightning knows to load files from.
+A Lightning device plugin can be defined via a single Typescript (.ts) file. However, if you have not yet set up your development environment consider reading the [readme](README.md) and [setup](SETUP.md) documentation. 
 
-Each LabChart Lightning device must export a single `getDeviceClasses()` function, e.g.
+In this document we give a brief introduction. A more detailed explanation exists in [this infographic](SDK_infographics_v2.01.pdf) document.
+
+You can also find complete plug-in script examples in [.\examples\devices](.\examples\devices).
+
+
+
+<br/>
+
+## Anatomy of a Device Plugin
+
+Your plugin file must contain three essential building blocks:
+
+1. Device class
+2. Physical device
+3. Proxy device
+
+The required interface for these classes can be found in [.\public\device-api.ts](public\device-api.ts).
+
+
+<br/>
+
+## Device class (`device-api.ts : IDeviceClass`)
+
+A singleton representing a closely-related class or catagory of devices that are Lightning-compatible.
+
+As an example, consider the ADInstruments PowerLab hardware range. A single PowerLab device class provides support for multiple PowerLab models (e.g. PowerLab 8/35 with 8 analog inputs vs PowerLab 2/26T supporting only 2 analog inputs) with varying capabilities. The reason we would typically choose to define a single PowerLab class to represent multiple models is that it allows a sampling setup created with a PowerLab 4/26T can be easily used by, say, another user on a different computer who only has access to a PowerLab 4/35.
+
+In the setup documentation [setup](SETUP.md) you saw a very basic example:
+
 
 ```ts
+export class DeviceClass {
+    constructor() {
+        console.log('In the constructor');
+    }
+}
+
 module.exports = {
-   getDeviceClasses(libs) {
+   getDeviceClasses() {
       ...
       return [new DeviceClass()];
    }
 }
 ```
 
-When LabChart Lightning starts, it calls `getDeviceClasses()`. This must return an object array which Lightning can query to discover connected instances of your particular class or classes of device.
+By exporting the getDeviceClasses() method, this `DeviceClass` is now registered with Lightning. When Lightning launches this and all other registered `DeviceClass` objects are compared to the any detected hardware. 
 
-On launch, LabChart Lightning loads all plugins. If there is a problem loading the plugin, information about the error can be obtained by clicking the (...) button highlighted in red in the image below:
+To make this comparison your `DeviceClass` class must contain a `checkDevicesIsPresent()` method. Lightning calls this method and passes it a `deviceConnection` object. That object will contain device information such as a vendor ID or a product ID. 
 
-![Error loading plugin](images/plugin-error.gif)
+```ts
 
-## Anatomy of a Device Plugin
+// now implementing the API
+export class DeviceClass implements IDeviceClass { 
+    // ...
 
-There are three main building blocks to a Lightning-compatible device:
+    checkDeviceIsPresent(
+        deviceConnection: DuplexDeviceConnection,
+        callback: (error: Error | null, device: OpenPhysicalDevice | null) => void
+    ): void {
 
-1. Device class
-2. Physical device
-3. Proxy device
+        const vid = deviceConnection.vendorId.toUpperCase();
+        const pid = deviceConnection.productId.toUpperCase();
+        let deviceName = '';
+        if (vid === 'abcd' && pid === 'efgh') {
+            deviceName = 'YourDeviceName';
+        } 
 
-The **Device class** corresponds to a single conceptual class or category of devices, e.g. PowerLab.
+        // now make a PhysicalDevice object - more on this below
+```
 
-The **Physical device** represents a single, active hardware device - already connected to the computer and able to sample data into LabChart Lightning.
+A relatively simple example exists in [.\examples\devices\Teensy_4_1\Teensy_4_1.ts](examples\devices\Teensy_4_1\Teensy_4_1.ts).
 
-The **Proxy device** represents a single device _within the context of a LabChart Lightning recording_. Manages the device settings and access to sampling for that recording.
+Depending upon how your device sends data, this method may need access to a parser object. See [.\examples\devices\MentalabExplore\deviceClass.ts](examples\devices\MentalabExplore\deviceClass.ts) for a more complex example.
 
-These interfaces must be implemented for the device plugin to be loaded into Lightning.
+If Lightning determines that a match exists it will then ask the `DeviceClass` to generate a `physicalDevice` object.
 
-### Device class (`device-api.ts : IDeviceClass`)
+<br/>
 
-A singleton representing a single, closely-related class of devices that are Lightning-compatible.
+## Physical device (`device-api.ts : OpenPhysicalDevice`)
 
-As an example, consider the ADInstruments PowerLab hardware range: a single PowerLab class provides support for multiple PowerLab models (e.g. PowerLab 8/35 with 8 analog inputs vs PowerLab 2/26T supporting only 2 analog inputs) with varying capabilities. The reason we would typically choose to define a single PowerLab class to represent multiple models is that it allows a sampling setup created with a PowerLab 4/26T can be easily used by, say, another user on a different computer who only has access to a PowerLab 4/35.
+The **physical device** represents your hardware; a single, active hardware device that is already connected to the computer.
 
-### Physical device (`device-api.ts : OpenPhysicalDevice`)
+It abstracts away the details of how Lightning interacts with the hardware or hardware API. Multiple LabChart Lightning recordings can use the same PhysicalDevice, but only one can sample with that device at any time.
 
-An object that is a representation of the connected hardware device. It abstracts away the details of how Lightning interacts with the hardware or hardware API. Multiple LabChart Lightning recordings can use the same PhysicalDevice, but only one can sample with that device at any time.
+A physical device instance is typically created by the **Device class** during application device scan in response to successful connection to the underlying hardware. Created instances will be reused during subsequent scans. That is, a new instance will only be created for new connections when, say, the user connected another device and performed a hardware rescan.
 
-#### Creation
+Physical device objects are only destroyed once the application closes.
 
-A **Physical device** instance is typically created by the **Device class** during application device scan in response to successful connection to the underlying hardware. Created instances will be reused during subsequent scans. i.e. A new instance will only be created for new connections when, say, the user connected another device and performed a hardware rescan.
+Other than access to constants, you should not often need to access the `physicalDevice`. Instead, the `proxyDevice` will handle sampling settings and interface with the `physicalDevice`. `proxyDevice` is discussed in the next section.
 
-Physical devices are only destroyed once the application closes.
+A simple stand alone `physicalDevice` example exists for Arduino devices in 
+[public\arduino-physical-device.ts](public\arduino-physical-device.ts).
 
-### Proxy device (`device-api.ts : IProxyDevice`)
 
-An object that is created for each recording to represent the PhysicalDevice in that recording. Manages the device settings and access to sampling for that recording. This ensures, for instance, that the physical device always uses the settings from the correct recording when sampling.
+<br/>
 
-#### Creation
+## Proxy device (`device-api.ts : IProxyDevice`)
 
-A **Proxy device** instance is created when both:
+Each `recording` in Lightning is similar to a file. Each such recording may have different sampling or device settings. So a separate `proxy device` object is created for each recording, and then supplies recording specific device settings back to the `physical device`. This ensures, for instance, that the physical device always uses the settings from the correct recording when sampling.
+
+Therefore, a **Proxy device** instance is created when both:
 
 1. There is an active recording open in LabChart Lightning.
 2. A working physical device is present.
 
 Proxy devices are destroyed each time a recording or the application closes.
 
-## Example Scenarios
+It is within `proxyDevice` that important sampling and hardware updates must be implemented. Please refer to the [device API](public\device-api.ts).
+
+`proxyDevice` objects also have access to sample data for their associated recording. As such, they may also need to access a parser.
+
+One discrete but simple packet parser example exists at [public\packet-parser.ts](public\packet-parser.ts). Incoming bytes are passed to the `onData()` method. That method then calls a method to process the buffer, which acts as a finite state machine. 
+
+The way you process the buffer will depend upon the characteristics of your data packet. For example, in (examples\devices\MentalabExplore\parser.ts)[examples\devices\MentalabExplore\parser.ts] a new packet code is found at the end of the packet.
+
+In a [typical proxydevice file](examples\devices\MentalabExplore\proxy.ts) you will see a number of supporting classes. These include `InputSettings` (range, speed, and units) which are then passed into `StreamSettings`. You can also see supporting gain settings in (examples\devices\MentalabExplore\settings.ts)[examples\devices\MentalabExplore\settings.ts].
+
+A simpler example of both settings and `proxyDevice` in one file can be found at (development\devices\Teensy_4_1\proxyDevice.ts)[development\devices\Teensy_4_1\proxyDevice.ts].
+
+Of note, is the following object. It creates a conversion from your raw data into the format that will be displayed in Lightning.
+
+<br/>
+
+```ts
+const kUnitsForGain = new UnitsInfoImpl(
+   'V', //unit name
+   UnitPrefix.kMilli, //unit prefix
+   kDefaultDecimalPlaces,
+   // Unit conversion
+   posFullScaleVAtGain, //maxInPrefixedUnits
+   0x7fff, // maxInADCValues based on 0x7fff for 16 bit
+   -posFullScaleVAtGain, //minInPrefixedUnits
+   -0x7fff, //-0x7fff, //minInADCValues
+   0x7fff * 1.5, //maxValidADCValue
+   -0x7fff * 1.5 //minValidADCValue
+);
+
+```
+
+
+<br/>
+
+## Example Scenarios and Summary
 
 To better understand the role of the various objects in the plugin implementation, consider the following scenarios:
+
+
+<br/>
+
 
 #### Scenario 1 - Attach a device and launch LabChart Lightning
 
@@ -78,7 +161,9 @@ To better understand the role of the various objects in the plugin implementatio
 2. Shortly after, Lightning initiates a device scan process. For each serial device returned by the operating system, `checkDeviceIsPresent(deviceConnection, callback)` is called on the DeviceClass implementation. If the vendor, product and manufacturer information for the connection match the expected values for the target device a new Physical device object is instantiated and returned to LabChart Lightning via callback.
 3. If a device was found, a new recording will be added to the project and a Device proxy for the found physical device will be created. Clicking on the Devices button at the top of the Chart View shows the connected device and a summary in a popup, as in the image below:
 
-![Error loading plugin](images/device-found.gif)
+
+<br/>
+
 
 #### Scenario 2 - User adjusts the device's sampling rate
 
@@ -89,9 +174,11 @@ Nearly all user interactions with a device in LabChart Lightning are performed o
 
 LabChart Lightning will then ensure settings changes are persisted across runs of the application.
 
-![Adjusting sampling rate](images/adjust-rate.gif)
 
-## Examples included with the SDK
+![Adjusting sampling rate](images/adjust-rate.png
+)
+
+## Further examples included with the SDK
 
 **`examples/devices/SerialSettings.ts`**
 
@@ -105,10 +192,15 @@ LabChart Lightning will then ensure settings changes are persisted across runs o
 * Exposes two user configurable settings: sampling rate and gain for each produced data stream.
 * `SerialWithMappedInputsUI.ts` shows how to add a list element to the signal sampling settins UI for choosing which device input will be recorded from.
 
+**`examples/devices/Teensy_4_1`**
+
+* Two different timer options are available, a simple interrupt and then a direct connection the ADC.
+
+
 ## More info
 
 Interface definitions can be found inside the `public` folder.
 
-These interfaces contain type annotations (in Typescript) and are usable in Typescript files. The import path must be relatively the same is in the examples as it is copied directly in-order to compile. E.g. Imports must always be from the path `../../../public/device-api`
+These interfaces contain type annotations (in Typescript) and are usable in Typescript files. The import path must be relatively the same is in the examples as it is copied directly in-order to compile. E.g. imports must always be from the path `../../../public/device-api`
 
 The baud rate is currently set to 115200 for all devices.
