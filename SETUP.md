@@ -12,7 +12,7 @@ As a setup check, we can now make a very simple (and very incomplete plugin file
 
 First, let's create a file in `./development/devices/YourDeviceName/YourDeviceName.ts`
 
-![empty-plugin](images/empty-plugin.png)
+![empty-plugin](./images/empty-plugin.png)
 
 The filename (excluding the file extension) much match the directory/folder name.
 
@@ -43,7 +43,7 @@ module.exports = {
 
 In VS Code it should look like this:
 
-![first-code](images/first-code.png)
+![first-code](https://github.com/adinstruments/LightningDeviceSDK/raw/update-readme/images/first-code.PNG)
 
 
 If we reload Lightning, and have the dev tools open, we can see our log in the console:
