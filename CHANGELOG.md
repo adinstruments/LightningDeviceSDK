@@ -1,5 +1,10 @@
 # LightningDeviceSDK Change Log
 
+### v0.1.8 - 24/12/2020
+- Added an Arduino-compatible Teensy device example. This device contains two timer examples and unlike other examples contains an ARM Cortex-M7 running at 600 MHz.
+- Add a simple PhysicalDevice base class for Arduino devices.
+- Added new documentation, inlcuding updates to the readme, a new SDK infographic, and more information on basic set up.
+
 ### v0.1.7 - 28/09/2020
 - Added MentaLab Explore device example. this device uses a new type of connection -  kDevConTypeSerialOverBluetooth
 - Change plugin naming and location requirements. Plugins must be contained within folders inside either `Devices` or `Calculations`. The plugin entry point must be the same name as the folder. Eg. `Devices/SerialSettings/SerialSettings.ts`.
