@@ -17,11 +17,11 @@ The LightningDeviceSDK provides functionality to write device connection plugins
 -  Bluetooth over Serial (Serial Port Profile)
 -  More to come...
 
-## Change log
+## Change Log
 
 See [Changelog](CHANGELOG.md).
 
-## Upcoming features
+## Upcoming Features
 
 -  Better than 10 microsecond inter-device synchronization over USB for Microchip ARM SAMD51 and SAMD21 based devices (e.g. Adafruit Feather M4, M0 etc. and  Sparkfun Thing+ SAMD51)
 -  Calling arbitrary proxy functions from custom UI
@@ -69,6 +69,16 @@ If you are using Visual Studio Code you can open a terminal from the `Termninal`
 And then run `npm install`:
 
 ![npm install](images/npm-install.png)
+
+
+![npm install](https://github.com/adinstruments/LightningDeviceSDK/blob/update-readme/images/npm-install.PNG)
+
+
+<image rel="preload" src="images/npm-install.png" alt="documents" as="font" type="font/woff2" crossorigin="anonymous">
+
+
+<image rel="preload" src="https://github.com/adinstruments/LightningDeviceSDK/blob/update-readme/images/npm-install.PNG" alt="documents" as="font" type="font/woff2" crossorigin="anonymous"
+
 
 In order for your plugin file to be loaded by Lightning it must be placed into the following location: 
 
