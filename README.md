@@ -1,6 +1,8 @@
 # LightningDeviceSDK
 
-The LightningDeviceSDK provides functionality to write device connection plugins in Typescript for LabChart Lightning. This repository does not provide any functionality, only example files and typed interfaces. You will need LabChart Lightning with a valid license in order to run your device plugin.
+The LightningDeviceSDK allows hardware manufacturers and researchers to connect their data aquisition devices to LabChart Lightning. This is accomplished by writing plugin software using [Typescript](https://www.typescriptlang.org/). 
+
+This repository does not provide any functionality, only example files and typed interfaces. You will need LabChart Lightning with a valid license in order to run your device plugin and connect your device.
 
 [Get LabChart Lightning](https://go.adinstruments.com/integrationLCLtrial). Take advantage of our free 30 day trial while you are in the setup phase of your plugin.
 
@@ -17,9 +19,13 @@ The LightningDeviceSDK provides functionality to write device connection plugins
 -  Bluetooth over Serial (Serial Port Profile)
 -  More to come...
 
+<br/>
+
 ## Change Log
 
 See [Changelog](CHANGELOG.md).
+
+<br/>
 
 ## Upcoming Features
 
@@ -27,6 +33,8 @@ See [Changelog](CHANGELOG.md).
 -  Calling arbitrary proxy functions from custom UI
 -  Plugins work for non-admin users 
 -  Better error messaging
+
+<br/>
 
 ## Getting Started
 
@@ -62,7 +70,7 @@ $ npm install
 
 Note: `npm` is the Node Package Manager which comes with Node.js and should already be installed with the steps above.
 
-If you are using Visual Studio Code you can open a terminal from the `Termninal` menu:
+If you are using Visual Studio Code you can open a terminal from the `Terminal` menu:
 
 ![open terminal](images/open-terminal.png)
 
@@ -70,14 +78,10 @@ And then run `npm install`:
 
 ![npm install](images/npm-install.png)
 
+<!-- 
+If you want images to work on a non-master branch then you need a full url
 
-![npm install](https://github.com/adinstruments/LightningDeviceSDK/blob/update-readme/images/npm-install.PNG)
-
-
-<image rel="preload" src="images/npm-install.png" alt="documents" as="font" type="font/woff2" crossorigin="anonymous">
-
-
-<image rel="preload" src="https://github.com/adinstruments/LightningDeviceSDK/blob/update-readme/images/npm-install.PNG" alt="documents" as="font" type="font/woff2" crossorigin="anonymous"
+![npm install](https://github.com/adinstruments/LightningDeviceSDK/blob/update-readme/images/npm-install.PNG) -->
 
 
 In order for your plugin file to be loaded by Lightning it must be placed into the following location: 
@@ -88,7 +92,10 @@ In order for your plugin file to be loaded by Lightning it must be placed into t
 (MacOS)  
 `~/Documents/LabChart Lightning/Plugins/devices`
 
-However, to speed up development you can instead work within your current location. Focusing in on the top left of VS Code you also can see an explorer button. Clicking on that button will allow you to see the structure of the project, and in particular, the `./development/` folder/directory.
+However, to speed up development you can instead work within your current location. Focusing in on the top left of VS Code you also can see an explorer button. Clicking on that button will allow you to see the structure of the project, and in particular, the `./development/` directory.
+
+<br/>
+
 
 ![development-folder](images/development-folder.png)
 
@@ -102,25 +109,31 @@ Then run `npm run watch` in your terminal.
 npm run watch
 ```
 
-This watches for any changes to `.js` or `.ts` files located under `./development/`, automatically copying the updated file(s) to the LabChart Lightning plugins folder. This is useful during development when iterating rapidly so that you can see the resulting changes as early as possible.
+This watches for any changes to `.js` or `.ts` files located under `./development/`, automatically copying the updated file(s) to the above mentioned `Documents/LabChart Lightning/Plugins/` directory. In this way you an see the resulting changes as early as possible, and therefore speed up development.
 
 Note: LabChart Lightning must be relaunched to re-compile device plugin files.
 
+<br/>
 
 ## More Setup Steps
 
 [Here](SETUP.md), you can go a little deeper and make sure that your plug-in file is being detected, and that you can find compilation errors.
 
+<br/>
 
 ## Overview
 
 Once your environment is set, you'll need an [overview](OVERVIEW.md) of the requirements for a device plug-in file.
 
+<br/>
+
 ## Advanced Topics
 
 Customizing Lightning's [user interface](DEVICE-UI.md) for your device.
 
-Inter-device time synchronization [time synch](TIME-SYNCH.md)
+Inter-device time synchronization [time synch](TIME-SYNCH.md).
+
+<br/>
 
 ## License
 
