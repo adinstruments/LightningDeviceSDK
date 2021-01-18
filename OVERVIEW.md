@@ -79,7 +79,7 @@ export class DeviceClass implements IDeviceClass {
 
 If you were to log out the `deviceConnection` object in the dev tools then you will see something like this in the console tab:
 
-![device connection](images\deviceConnection.PNG)
+![device connection](images\deviceConnection.png)
 
 Here we can see the vendorID and productID.
 
@@ -173,7 +173,7 @@ To better understand the role of the various objects in the plugin implementatio
 3. If a device is found, a `deviceProxy` for the found physical device will be created for that recording. Clicking on the Devices button at the top of the Chart View shows the connected device and a summary in a popup, as in the image below:
 
 
-![Confirming a connected device](images/connected-device.PNG)
+![Confirming a connected device](images/connected-device.png)
 
 
 <br/>
