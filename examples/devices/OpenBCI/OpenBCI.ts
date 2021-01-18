@@ -50,6 +50,7 @@ import { UnitsInfoImpl, UnitsInfo16Bit } from '../../../public/device-units';
 import { DuplexStream } from '../../../public/device-streams';
 
 import { StreamRingBufferImpl } from '../../../public/stream-ring-buffer';
+import { DeviceClassBase } from '../../../public/device-class-base';
 
 const deviceClassId = '06051a8c-37c3-11e8-b467-0ed5f89f718b';
 // UUID generated using https://www.uuidgenerator.net/version1
@@ -63,10 +64,13 @@ function getDataFormat() {
 const kSupportedSamplesPerSec = [250];
 
 export const kDefaultSamplesPerSecIndex = 0;
-export const kDefaultSamplesPerSec = kSupportedSamplesPerSec[kDefaultSamplesPerSecIndex];
+export const kDefaultSamplesPerSec =
+   kSupportedSamplesPerSec[kDefaultSamplesPerSecIndex];
 
 export function findClosestSupportedRateIndex(samplesPerSec: number) {
-   let result = kSupportedSamplesPerSec.findIndex((value) => value <= samplesPerSec);
+   const result = kSupportedSamplesPerSec.findIndex(
+      (value) => value <= samplesPerSec
+   );
    if (result < 0) {
       return kSupportedSamplesPerSec.length - 1;
    }
@@ -76,7 +80,6 @@ export function findClosestSupportedRateIndex(samplesPerSec: number) {
 export function findClosestSupportedRate(samplesPerSec: number) {
    return kSupportedSamplesPerSec[findClosestSupportedRateIndex(samplesPerSec)];
 }
-
 
 const kChannelsPerADS1299 = 8;
 
@@ -164,7 +167,7 @@ class PhysicalDevice implements OpenPhysicalDevice {
       let adcs = 0;
 
       const searchStr = 'ADS1299';
-      for (let adcPos = 0; true;) {
+      for (let adcPos = 0; true; ) {
          adcPos = versionInfo.indexOf(searchStr, adcPos);
          if (adcPos < 0) break;
          ++adcs;
@@ -711,15 +714,15 @@ class ProxyDevice implements IProxyDevice {
       argJson: {} | undefined,
       callback: (
          error: Error | null,
-         result: { connectionError: boolean, deviceError: string } | null
+         result: { connectionError: boolean; deviceError: string } | null
       ) => void
    ): void => {
       if (!this.physicalDevice) {
-         callback(new Error("No physical device!"), null);
+         callback(new Error('No physical device!'), null);
          return;
       }
       if (!this.physicalDevice.deviceConnection) {
-         callback(new Error("No physical device connection!"), null);
+         callback(new Error('No physical device connection!'), null);
          return;
       }
       const connection = this.physicalDevice.deviceConnection;
@@ -734,7 +737,6 @@ class ProxyDevice implements IProxyDevice {
       const lastError = connection.lastError();
       callback(null, { connectionError: !!lastError, deviceError: lastError });
    };
-
 
    /**
     * Called for both new and existing recordings. Initialize all settings for this device that are
@@ -961,7 +963,7 @@ class ProxyDevice implements IProxyDevice {
          if (stream && stream.isEnabled) {
             const nSamples = Math.max(
                bufferSizeInSecs *
-               ((stream.samplesPerSec as IDeviceSetting).value as number),
+                  ((stream.samplesPerSec as IDeviceSetting).value as number),
                kMinOutBufferLenSamples
             );
             this.outStreamBuffers.push(
@@ -1051,11 +1053,12 @@ class ProxyDevice implements IProxyDevice {
  * The DeviceClass object represents this set of devices and can find and create PhysicalDevice
  * objects of its class, as well as the ProxyDevice objects.
  */
-class DeviceClass implements IDeviceClass {
+class DeviceClass extends DeviceClassBase implements IDeviceClass {
    // While worker support for devices is in development.
    runOnMainThread = true;
 
    constructor() {
+      super();
       this.checkDeviceIsPresent = this.checkDeviceIsPresent.bind(this);
    }
 
@@ -1074,7 +1077,7 @@ class DeviceClass implements IDeviceClass {
     * Called when the app shuts down. Chance to release any resources acquired during this object's
     * life.
     */
-   release(): void { }
+   release(): void {}
 
    /**
     * @returns the name of the class of devices
@@ -1217,18 +1220,6 @@ class DeviceClass implements IDeviceClass {
       physicalDevice: OpenPhysicalDevice | null
    ): IProxyDevice {
       return new ProxyDevice(quarkProxy, physicalDevice as PhysicalDevice);
-   }
-
-   indexOfBestMatchingDevice(
-      descriptor: OpenPhysicalDeviceDescriptor,
-      availablePhysDevices: OpenPhysicalDeviceDescriptor[]
-   ): number {
-      console.log(
-         'OpenBCI.indexOfBestMatchingDevice called',
-         descriptor,
-         availablePhysDevices
-      );
-      return 0;
    }
 }
 

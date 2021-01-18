@@ -4,23 +4,17 @@ import {
    DuplexDeviceConnection,
    ProxyDeviceSys,
    OpenPhysicalDevice,
-   OpenPhysicalDeviceDescriptor,
+   OpenPhysicalDeviceDescriptor
 } from '../../../public/device-api';
 import { DuplexStream } from '../../../public/device-streams';
 import { PhysicalDevice } from '../../../public/arduino-physical-device';
-import { 
-   ProxyDevice,
-   getDefaultSettings,
-} from './proxyDevice';
+import { ProxyDevice, getDefaultSettings } from './proxyDevice';
+import { DeviceClassBase } from '../../../public/device-class-base';
 
 export const kEnableLogging = true;
 
 // Assuming we are working with the INTERRUPT_TIMER example in Teensy.ino
-export const kStreamNames = [
-   'Teensy Sine Wave',
-   'Teensy Square Wave'
-];
-
+export const kStreamNames = ['Teensy Sine Wave', 'Teensy Square Wave'];
 
 /**
  * The device class is the set of types of device that can share the same settings so that
@@ -29,8 +23,9 @@ export const kStreamNames = [
  * The DeviceClass object represents this set of devices and can find and create PhysicalDevice
  * objects of its class, as well as the ProxyDevice objects.
  */
-export class DeviceClass implements IDeviceClass {
+export class DeviceClass extends DeviceClassBase implements IDeviceClass {
    constructor() {
+      super();
       if (kEnableLogging) console.log('DeviceClass()');
    }
 
@@ -74,7 +69,7 @@ export class DeviceClass implements IDeviceClass {
       deviceConnection: DuplexDeviceConnection,
       callback: (error: Error | null, device: OpenPhysicalDevice | null) => void
    ): void {
-      if(kEnableLogging) {
+      if (kEnableLogging) {
          console.log('checkDeviceIsPresent()');
          console.log(deviceConnection);
       }
@@ -84,7 +79,7 @@ export class DeviceClass implements IDeviceClass {
       let deviceName = '';
       if (vid === '16C0' && pid === '0483') {
          deviceName = 'Teensy_4_1';
-      } 
+      }
       // else if (vid === '2341' && pid === '003E') deviceName = 'Arduino Due';
       //Due Native port 003E
       // else if(vid === '2341' && pid === '003D')
@@ -141,7 +136,7 @@ export class DeviceClass implements IDeviceClass {
          const endPos = resultStr.indexOf('$$$');
 
          if (endPos !== -1) {
-             const startPos = resultStr.indexOf('{');
+            const startPos = resultStr.indexOf('{');
             if (startPos < 0) {
                callback(null, null); //Device not found
             }
@@ -149,9 +144,12 @@ export class DeviceClass implements IDeviceClass {
             let versionInfo;
             try {
                versionInfo = JSON.parse(versionInfoJSON);
-               
-            } catch(err) {
-               console.warn('JSON error when parsing version information: ', versionInfoJSON, err.message);
+            } catch (err) {
+               console.warn(
+                  'JSON error when parsing version information: ',
+                  versionInfoJSON,
+                  err.message
+               );
 
                callback(null, null); //Device not found
             }
@@ -214,17 +212,10 @@ export class DeviceClass implements IDeviceClass {
          getDefaultSettings(nStreams)
       );
    }
-
-   indexOfBestMatchingDevice(
-      descriptor: OpenPhysicalDeviceDescriptor,
-      availablePhysDevices: OpenPhysicalDeviceDescriptor[]
-   ): number {
-      return 0;
-   }
 }
 
 module.exports = {
    getDeviceClasses() {
       return [new DeviceClass()];
-   },
+   }
 };
