@@ -79,7 +79,7 @@ export class DeviceClass implements IDeviceClass {
 
 If you were to log out the `deviceConnection` object in the dev tools then you will see something like this in the console tab:
 
-![device connection](images\deviceConnection.png)
+![device connection](images/deviceConnection.png)
 
 Here we can see the vendorID and productID.
 
