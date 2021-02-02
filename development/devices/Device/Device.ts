@@ -46,6 +46,7 @@ import { UnitsInfoImpl, UnitsInfo16Bit } from '../../../public/device-units';
 import { DuplexStream } from '../../../public/device-streams';
 
 import { StreamRingBufferImpl } from '../../../public/stream-ring-buffer';
+import { DeviceClassBase } from '../../../public/device-class-base';
 
 // Imported libs set in getDeviceClass(libs) in module.exports below
 // obtained from quark-enums
@@ -1143,7 +1144,12 @@ class ProxyDevice implements IProxyDevice {
  * The DeviceClass object represents this set of devices and can find and create PhysicalDevice
  * objects of its class, as well as the ProxyDevice objects.
  */
-export class DeviceClass implements IDeviceClass {
+export class DeviceClass extends DeviceClassBase implements IDeviceClass {
+   
+   constructor() {
+      super();
+   }
+   
    /**
     * Called when the app shuts down. Chance to release any resources acquired during this object's
     * life.
@@ -1268,13 +1274,6 @@ export class DeviceClass implements IDeviceClass {
          physicalTestDevice,
          getDefaultSettings()
       );
-   }
-
-   indexOfBestMatchingDevice(
-      descriptor: OpenPhysicalDeviceDescriptor,
-      availablePhysDevices: OpenPhysicalDeviceDescriptor[]
-   ): number {
-      return 0;
    }
 }
 
