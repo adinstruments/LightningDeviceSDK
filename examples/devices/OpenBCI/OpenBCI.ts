@@ -30,9 +30,7 @@ import {
    IDeviceInputSettingsSys,
    IDeviceStreamApi,
    IDeviceStreamApiImpl,
-   UnitsInfo,
    UnitPrefix,
-   IDuplexStream,
    IDeviceClass,
    DeviceEvent,
    OpenPhysicalDevice,
@@ -45,7 +43,7 @@ import {
 
 import { Setting } from '../../../public/device-settings';
 
-import { UnitsInfoImpl, UnitsInfo16Bit } from '../../../public/device-units';
+import { UnitsInfo16Bit } from '../../../public/device-units';
 
 import { DuplexStream } from '../../../public/device-streams';
 

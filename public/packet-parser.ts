@@ -231,14 +231,26 @@ export class Parser {
       this.proxyDevice = proxyDevice;
    }
 
-   startSampling(): boolean {
+   startSampling(startOnUSBFrame?: number): boolean {
       this.localClockAtSamplingStart = undefined;
 
       if (!this.inStream || !this.proxyDevice) {
          return false;
       }
 
-      this.inStream.write('b\n'); // Arduino begin sampling command
+      if (startOnUSBFrame && startOnUSBFrame >= 0) {
+         const startFrameBytes = new Uint8Array([
+            'b'.charCodeAt(0),
+            'o'.charCodeAt(0), //'o' for 'on frame'
+            startOnUSBFrame & 0xff,
+            startOnUSBFrame >> 8,
+            '\n'.charCodeAt(0)
+         ]);
+         this.inStream.write(startFrameBytes);
+         console.log('startFrameBytes', startFrameBytes);
+      } else {
+         this.inStream.write('b\n'); // Arduino begin sampling command
+      }
 
       //Make estimate start time
       this.localClockAtSamplingStart = new Int32Array(2);
@@ -456,7 +468,7 @@ export class Parser {
    }
 
    //returns true if request is initiated, false otherwise.
-   getRemoteTime(getLatestUSBFrame: boolean = false): boolean {
+   getRemoteTime(getLatestUSBFrame = false): boolean {
       if (this.timePoint) {
          console.warn('previous request still in progress!');
          return false; //previous request still in progress!
@@ -480,13 +492,10 @@ export class Parser {
             this.timePoint.localPreTimeTick
          );
 
-      if (getLatestUSBFrame) {
-         this.getRemoteTimeCommand[0] = 'u'.charCodeAt(0);
-         this.inStream.write(this.getRemoteTimeCommand);
-      } else {
-         this.getRemoteTimeCommand[0] = 'n'.charCodeAt(0);
-         this.inStream.write(this.getRemoteTimeCommand); // ask the device for its "now" time tick from the timer that drives the ADC
-      }
+      // ask the device for its "now" time tick from the timer that drives the ADC
+      const command = getLatestUSBFrame ? 'u' : 'n';
+      this.getRemoteTimeCommand[0] = command.charCodeAt(0);
+      this.inStream.write(this.getRemoteTimeCommand);
 
       this.incrementTimeRequestNumber();
       return true;

@@ -39,6 +39,7 @@ import {
    UnitsInfo,
    UnitPrefix,
    IDuplexStream,
+   IDeviceClass,
    DeviceEvent,
    OpenPhysicalDevice,
    IProxyDevice,
@@ -64,7 +65,6 @@ import { StreamRingBufferImpl } from '../../../public/stream-ring-buffer';
 
 import { Parser } from '../../../public/packet-parser';
 import { DeviceClassBase } from '../../../public/device-class-base';
-import { IDeviceClass } from 'libs/quark';
 
 //Don't fire notifications into Lightning too often!
 const kMinimumSamplingUpdatePeriodms = 50;
@@ -984,13 +984,12 @@ class ProxyDevice implements IProxyDevice {
     */
    startSampling(startOnUSBFrame?: number): boolean {
       if (!this.parser || !this.physicalDevice) return false; // Can't sample if no hardware connection
-      // if (
-      //    this.physicalDevice.timePointInfo.flags &
-      //    ADITimePointInfoFlags.kDeviceSynchUSBStartOnSpecifiedFrame
-      // ) {
-      //    return this.parser.startSampling(startOnUSBFrame);
-      // } else
-      {
+      if (
+         this.physicalDevice.timePointInfo.flags &
+         ADITimePointInfoFlags.kDeviceSynchUSBStartOnSpecifiedFrame
+      ) {
+         return this.parser.startSampling(startOnUSBFrame);
+      } else {
          return this.parser.startSampling();
       }
    }
@@ -1117,7 +1116,6 @@ export class DeviceClass extends DeviceClassBase implements IDeviceClass {
    constructor() {
       super();
    }
-
    /**
     * Called when the app shuts down. Chance to release any resources acquired during this object's
     * life.

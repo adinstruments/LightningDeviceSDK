@@ -8,6 +8,7 @@ import {
    SerialPortOptions,
    TInt64,
    TimePoint,
+   USBTimePoint,
    FirstSampleRemoteTime
 } from '../../public/device-api';
 import { isMapLike } from 'libs/serializr/src/utils/utils';
@@ -27,19 +28,25 @@ class MockDeviceConnection {
    start(): boolean {
       return true;
    } //returns true if started or already running
-   stop(): void { }
+   stop(): void {}
    setReadHandler(
       callback: (error: Error | null, buffer: Int8Array | null) => void
-   ): void { }
-   onStreamDestroy(): void { } //reset the callback
-   release(): void { }
-   setOption(options: SerialPortOptions): void { }
+   ): void {}
+   onStreamDestroy(): void {} //reset the callback
+   release(): void {}
+   setOption(options: SerialPortOptions): void {}
 
-   getLocalSteadyClockTickNow(timeTick: TInt64): void { }
-   write(buffer: Buffer, callback: (error?: Error) => void): void { }
-   isOpen(): boolean { return true; }
-   lastError(): string { return ''; }
-   isReceivingData(): boolean { return true; }
+   getLocalSteadyClockTickNow(timeTick: TInt64): void {}
+   write(buffer: Buffer, callback: (error?: Error) => void): void {}
+   isOpen(): boolean {
+      return true;
+   }
+   lastError(): string {
+      return '';
+   }
+   isReceivingData(): boolean {
+      return true;
+   }
 }
 
 class MockStream implements IDuplexStream {
@@ -79,17 +86,17 @@ class MockStream implements IDuplexStream {
       chunk: any,
       encoding: BufferEncoding,
       callback: (error?: Error | null) => void
-   ): void { }
+   ): void {}
    setDefaultEncoding(encoding: string): this {
       return this;
    }
-   destroy(error?: Error): void { }
+   destroy(error?: Error): void {}
 
    isRunning: boolean;
    lastErr: Error | null;
    timeoutms: number;
 
-   setReadTimeout(ms: number): void { }
+   setReadTimeout(ms: number): void {}
    //   _read(size: number): void;
    //on: (event: string | symbol, listener: (...args: any[]) => void) => void;
 
@@ -123,15 +130,15 @@ class MockStreamBuffer implements IStreamBuffer {
 class MockDataSink implements IDataSink {
    outStreamBuffers: MockStreamBuffer[];
 
-   onSamplingStarted(): void { }
-   onSamplingUpdate(): void { }
-   onSamplingStopped(errorMsg: string): void { }
+   onSamplingStarted(): void {}
+   onSamplingUpdate(): void {}
+   onSamplingStopped(errorMsg: string): void {}
    onRemoteTimeEvent(
       error: Error | null,
       timePoint: TimePoint | FirstSampleRemoteTime | null
-   ): void { }
+   ): void {}
 
-   onError(error: Error): void { }
+   onError(error: Error): void {}
 
    constructor(nStreams = 2) {
       this.outStreamBuffers = [];
@@ -980,6 +987,46 @@ describe('For time packets, parser ', () => {
       const timePoint = new FirstSampleRemoteTime();
       timePoint.remoteFirstSampleTick[0] = 0x04030201;
       timePoint.remoteFirstSampleTick[1] = 0;
+
+      expect(dataSink.onRemoteTimeEvent).toBeCalledWith(null, timePoint);
+   });
+
+   it('handles a good LatestUSBFrameTimePacket while not sampling', () => {
+      const stream = new MockStream();
+      const parser = new Parser(stream, 2);
+      const dataSink = new MockDataSink();
+
+      parser.setProxyDevice(dataSink);
+
+      parser.getRemoteTime(true);
+
+      stream.receive([
+         0x50,
+         0xa0,
+         0x4c, //packet type: First Sample Time
+         0x00, //packet count
+         0x00, //time request number
+         0x01, //23 bit microsecond tick when request was made
+         0x02,
+         0x03,
+         0x04,
+         0xaf, //16 bit frame number
+         0x05,
+         0x06, //23 bit microsecond tick when last USB Start of frame interrupt occurred
+         0x07,
+         0x08,
+         0x09
+      ]);
+
+      expect(dataSink.outStreamBuffers[1].writeInt).toBeCalledTimes(0);
+      expect(dataSink.onRemoteTimeEvent).toBeCalledTimes(1);
+
+      const timePoint = new USBTimePoint();
+      timePoint.remoteTimeTick[0] = 0x04030201;
+      timePoint.remoteTimeTick[1] = 0;
+      timePoint.latestUSBFrame = 0x05af;
+      timePoint.remoteUSBSOFTimeTick[0] = 0x09080706;
+      timePoint.remoteUSBSOFTimeTick[1] = 0;
 
       expect(dataSink.onRemoteTimeEvent).toBeCalledWith(null, timePoint);
    });

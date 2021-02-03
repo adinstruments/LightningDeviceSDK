@@ -14,7 +14,8 @@ import {
    IDeviceManagerApi,
    IDeviceSettingsApi,
    HierarchyOfDeviceSettingsBase,
-   DeviceProxyId, IDeviceProxyAPI
+   DeviceProxyId,
+   IDeviceProxyAPI
 } from './device-api';
 import { IPluginModuleFeature, ILcModel } from './plugin-api';
 
@@ -333,7 +334,7 @@ export interface IDeviceUICustomReact extends IDeviceUIElementBase {
    custom: (react: any) => JSX.Element;
 }
 
-export interface IDataPreviewApi extends ILcModel { }
+export interface IDataPreviewApi extends ILcModel {}
 
 export interface IDeviceUISignalPreview extends IDeviceUIElementBase {
    // Intended for internal use only.
@@ -429,7 +430,7 @@ export interface IJsDeviceUI {
     * implementation it will use to display information for a specific
     * device.
     *
-    * @param deviceClassGuid is the device's class unique guid. 
+    * @param deviceClassGuid is the device's class unique guid.
     * @param deviceInternalName is the internal name of the device. This
     * should be used if the device class guid is not specific enough
     * or device supports being renamed.
@@ -477,4 +478,4 @@ export interface IJsDeviceUI {
  *
  * @example export class MyDeviceSettingsUI implements IDeviceUIApi { ... }
  */
-export interface IDeviceUIApi extends IPluginModuleFeature, IJsDeviceUI { }
+export interface IDeviceUIApi extends IPluginModuleFeature, IJsDeviceUI {}

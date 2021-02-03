@@ -16,7 +16,7 @@ export class DuplexStream implements IDuplexStream {
 
    onError: ErrorListener;
    onData: DataListener;
-   onDestroy = (error: Error | null) => { }; //DestroyListener
+   onDestroy = (error: Error | null) => {}; //DestroyListener
 
    defaultWriteCallback = (error: Error | null | undefined) => {
       return;
@@ -177,7 +177,7 @@ export class DuplexStream implements IDuplexStream {
 }
 
 interface Constructor<T> {
-   new(...args: any[]): T;
+   new (...args: any[]): T;
 }
 
 export function concatTypedArrays(a: Buffer, b: Buffer, aStartInd: number) {

@@ -62,6 +62,7 @@ import { DuplexStream } from '../../../public/device-streams';
 import { StreamRingBufferImpl } from '../../../public/stream-ring-buffer';
 
 import { Parser } from '../../../public/packet-parser';
+import { DeviceClassBase } from '../../../public/device-class-base';
 
 //Don't fire notifications into Lightning too often!
 const kMinimumSamplingUpdatePeriodms = 50;
@@ -86,10 +87,13 @@ const kSupportedSamplesPerSec = [
 
 const kDefaultSamplesPerSecIndex = 6;
 //This needs to match the default rate in the hardware after it reboots!
-const kDefaultSamplesPerSec = kSupportedSamplesPerSec[kDefaultSamplesPerSecIndex];
+const kDefaultSamplesPerSec =
+   kSupportedSamplesPerSec[kDefaultSamplesPerSecIndex];
 
 function findClosestSupportedRateIndex(samplesPerSec: number) {
-   let result = kSupportedSamplesPerSec.findIndex((value) => value <= samplesPerSec);
+   const result = kSupportedSamplesPerSec.findIndex(
+      (value) => value <= samplesPerSec
+   );
    if (result < 0) {
       return kSupportedSamplesPerSec.length - 1;
    }
@@ -100,8 +104,8 @@ function findClosestSupportedRate(samplesPerSec: number) {
    return kSupportedSamplesPerSec[findClosestSupportedRateIndex(samplesPerSec)];
 }
 
-const kAllStreams = -1; //Stream index value that means the setting is the same across 
-//all streams, e.g. for this device, the sample rate. 
+const kAllStreams = -1; //Stream index value that means the setting is the same across
+//all streams, e.g. for this device, the sample rate.
 
 const kMinOutBufferLenSamples = 1024;
 
@@ -501,7 +505,6 @@ const kDefaultRate: IDeviceSetting = {
    ]
 };
 
-
 class DeviceSettings implements IDeviceProxySettingsSys {
    version = kSettingsVersion;
 
@@ -511,7 +514,6 @@ class DeviceSettings implements IDeviceProxySettingsSys {
    dataInStreams: IDeviceStreamApi[];
 
    constructor(proxy: ProxyDevice, nStreams: number) {
-
       //This device's streams all sample at the same rate
       this.deviceSamplesPerSec = new Setting(
          kDefaultRate,
@@ -521,13 +523,11 @@ class DeviceSettings implements IDeviceProxySettingsSys {
          }
       );
 
-
       this.dataInStreams = kStreamNames.slice(0, nStreams).map(() => ({
          enabled: kDefaultEnabled,
          inputSettings: kDefaultInputSettings,
          samplesPerSec: this.deviceSamplesPerSec
       }));
-
    }
 }
 
@@ -538,10 +538,10 @@ function getDefaultSettings(proxy: ProxyDevice, nStreams: number) {
 }
 
 function getDefaultDisabledStreamSettings(settings: DeviceSettings) {
-   const result = new class {
-      enabled = kDefaultDisabled;
-      inputSettings = kDefaultInputSettings;
-      samplesPerSec = settings.deviceSamplesPerSec;
+   const result = {
+      enabled: kDefaultDisabled,
+      inputSettings: kDefaultInputSettings,
+      samplesPerSec: settings.deviceSamplesPerSec
    };
 
    return result;
@@ -643,7 +643,9 @@ class ProxyDevice implements IProxyDevice {
 
       console.log('nStreams =', nStreams);
 
-      const defaultDisabledStreamSettings = getDefaultDisabledStreamSettings(this.settings);
+      const defaultDisabledStreamSettings = getDefaultDisabledStreamSettings(
+         this.settings
+      );
 
       // Ensure the settings have the correct number of data in streams for the current physical
       // device. This logic is complicated by the fact we support physical devices having different
@@ -744,7 +746,6 @@ class ProxyDevice implements IProxyDevice {
          }
       }
    }
-
 
    //TODO: pass the actual setting that changed
    //Note this is a curried function so it can be called by Quark on the main JS thread after sampling has stopped, if needed.
@@ -942,7 +943,7 @@ class ProxyDevice implements IProxyDevice {
          if (stream && stream.isEnabled) {
             const nSamples = Math.max(
                bufferSizeInSecs *
-               ((stream.samplesPerSec as IDeviceSetting).value as number),
+                  ((stream.samplesPerSec as IDeviceSetting).value as number),
                kMinOutBufferLenSamples
             );
             this.outStreamBuffers.push(
@@ -1081,18 +1082,22 @@ class ProxyDevice implements IProxyDevice {
  * The DeviceClass object represents this set of devices and can find and create PhysicalDevice
  * objects of its class, as well as the ProxyDevice objects.
  */
-export class DeviceClass implements IDeviceClass {
+export class DeviceClass extends DeviceClassBase implements IDeviceClass {
+   constructor() {
+      super();
+   }
+
    /**
     * Called when the app shuts down. Chance to release any resources acquired during this object's
     * life.
     */
-   release(): void { }
+   release(): void {}
 
    /**
     * Required member for devices that support being run against Lightning's
     * test suite.
     */
-   clearPhysicalDevices(): void { }
+   clearPhysicalDevices(): void {}
 
    onError(err: Error): void {
       console.error(err);
@@ -1137,16 +1142,16 @@ export class DeviceClass implements IDeviceClass {
       const vid = deviceConnection.vendorId.toUpperCase();
       const pid = deviceConnection.productId.toUpperCase();
       let deviceName = '';
-      if (vid === '2341' && pid === '003E')
-         deviceName = 'Arduino Due'; //Due Native port 003E
+      if (vid === '2341' && pid === '003E') deviceName = 'Arduino Due';
+      //Due Native port 003E
       // else if(vid === '2341' && pid === '003D')
       //    deviceName = 'Due Programming port';  //not recommended!
-      else if (vid === '239A' && pid === '801B')
-         deviceName = 'ADAFruit Feather M0 Express';
-      else if (vid === '239A' && pid === '8022')
-         deviceName = 'ADAFruit Feather M4';
-      else if (vid === '1B4F' && pid === 'F016')
-         deviceName = 'Sparkfun Thing Plus SAMD51';
+      // else if (vid === '239A' && pid === '801B')
+      //    deviceName = 'ADAFruit Feather M0 Express';
+      // else if (vid === '239A' && pid === '8022')
+      //    deviceName = 'ADAFruit Feather M4';
+      // else if (vid === '1B4F' && pid === 'F016')
+      //    deviceName = 'Sparkfun Thing Plus SAMD51';
       else {
          callback(null, null); // Did not find one of our devices on this connection
          return;
@@ -1238,17 +1243,7 @@ export class DeviceClass implements IDeviceClass {
       physicalDevice: OpenPhysicalDevice | null
    ): ProxyDevice {
       const physicalTestDevice = physicalDevice as PhysicalDevice | null;
-      return new ProxyDevice(
-         quarkProxy,
-         physicalTestDevice
-      );
-   }
-
-   indexOfBestMatchingDevice(
-      descriptor: OpenPhysicalDeviceDescriptor,
-      availablePhysDevices: OpenPhysicalDeviceDescriptor[]
-   ): number {
-      return 0;
+      return new ProxyDevice(quarkProxy, physicalTestDevice);
    }
 }
 

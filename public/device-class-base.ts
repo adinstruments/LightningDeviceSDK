@@ -26,7 +26,7 @@ export class DeviceClassBase
       const deltaNInputs = available.map((it, index) => {
          return { diff: descriptor.numInputs - it.numInputs, it };
       });
-      deltaNInputs.sort((l, r) => Math.abs(l.diff - r.diff));
+      deltaNInputs.sort((l, r) => Math.abs(l.diff) - Math.abs(r.diff));
 
       const bestMatch = deltaNInputs[0].it;
       return availablePhysDevices.indexOf(bestMatch);

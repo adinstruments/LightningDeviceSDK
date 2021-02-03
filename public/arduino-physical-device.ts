@@ -49,7 +49,7 @@ export class PhysicalDevice implements OpenPhysicalDevice {
       return {
          deviceType: this.deviceClass.getDeviceClassName(),
          numInputs: this.getNumberOfAnalogInputs(),
-         deviceId: this.serialNumber || this.deviceStream.source.devicePath,
+         deviceId: this.serialNumber || this.deviceStream.source.devicePath
       };
    }
 }
