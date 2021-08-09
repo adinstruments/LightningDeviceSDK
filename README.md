@@ -1,6 +1,6 @@
 # LightningDeviceSDK
 
-The LightningDeviceSDK allows hardware manufacturers and researchers to connect their data aquisition devices to LabChart Lightning. This is accomplished by writing plugin software using [Typescript](https://www.typescriptlang.org/). 
+The LightningDeviceSDK allows hardware manufacturers and researchers to connect their data aquisition devices to LabChart Lightning. This is accomplished by writing plugin software using [Typescript](https://www.typescriptlang.org/).
 
 This repository does not provide any functionality, only example files and typed interfaces. You will need LabChart Lightning with a valid license in order to run your device plugin and connect your device.
 
@@ -10,7 +10,6 @@ This repository does not provide any functionality, only example files and typed
 
 [Tell us about yourself](https://go.adinstruments.com/l/21302/2020-09-17/5qnltg). If you would like notifications regarding new resources and opportunities, such as promoting your device to researchers, then please fill out our contact form.
 
-
 **\*\*The LightningDeviceSDK is currently under development and is subject to change.\*\***
 
 ### Supported Device Classes
@@ -19,22 +18,16 @@ This repository does not provide any functionality, only example files and typed
 -  Bluetooth over Serial (Serial Port Profile)
 -  More to come...
 
-<br/>
-
 ## Change Log
 
 See [Changelog](CHANGELOG.md).
 
-<br/>
-
 ## Upcoming Features
 
--  Better than 10 microsecond inter-device synchronization over USB for Microchip ARM SAMD51 and SAMD21 based devices (e.g. Adafruit Feather M4, M0 etc. and  Sparkfun Thing+ SAMD51)
+-  Better than 10 microsecond inter-device synchronization over USB for Microchip ARM SAMD51 and SAMD21 based devices (e.g. Adafruit Feather M4, M0 etc. and Sparkfun Thing+ SAMD51)
 -  Calling arbitrary proxy functions from custom UI
--  Plugins work for non-admin users 
+-  Plugins work for non-admin users
 -  Better error messaging
-
-<br/>
 
 ## Getting Started
 
@@ -54,11 +47,12 @@ Install the needed dependencies:
    -  Install VS Code extension: ESLint
 
 If you're developing Arduino firmware:
-- Arduino IDE - https://www.arduino.cc/en/Main/Software
-   - Arduino core(s) for the intended board(s)
-   - For best possible time synchronization between devices over USB, we recommend SAM51 based boards, e.g. (e.g. Adafruit Feather M4 etc. and  Sparkfun Thing+ SAMD51)
-   - Optionally, the Arduino extension for Visual Studio Code
-   - firmware examples for several boards exist in [examples\firmware](examples\firmware).
+
+-  Arduino IDE - https://www.arduino.cc/en/Main/Software
+   -  Arduino core(s) for the intended board(s)
+   -  For best possible time synchronization between devices over USB, we recommend SAM51 based boards, e.g. (e.g. Adafruit Feather M4 etc. and Sparkfun Thing+ SAMD51)
+   -  Optionally, the Arduino extension for Visual Studio Code
+   -  firmware examples for several boards exist in [examples\firmware](examples\firmware).
 
 Clone this repo to your working environment
 
@@ -78,13 +72,12 @@ And then run `npm install`:
 
 ![npm install](images/npm-install.png)
 
-<!-- 
+<!--
 If you want images to work on a non-master branch then you need a full url
 
 ![npm install](https://github.com/adinstruments/LightningDeviceSDK/blob/update-readme/images/npm-install.PNG) -->
 
-
-In order for your plugin file to be loaded by Lightning it must be placed into the following location: 
+In order for your plugin file to be loaded by Lightning it must be placed into the following location:
 
 (Windows)  
 `C:\Users\[USERNAME]\Documents\LabChart Lightning\Plugins\Devices`
@@ -96,10 +89,9 @@ However, to speed up development you can instead work within your current locati
 
 <br/>
 
-
 ![development-folder](images/development-folder.png)
 
-The above image shows the path to an example device plugin file: 
+The above image shows the path to an example device plugin file:
 
 `./development/devices/Device/Device.ts`
 
@@ -113,27 +105,21 @@ This watches for any changes to `.js` or `.ts` files located under `./developmen
 
 Note: LabChart Lightning must be relaunched to re-compile device plugin files.
 
-<br/>
-
 ## More Setup Steps
 
 [Here](SETUP.md), you can go a little deeper and make sure that your plug-in file is being detected, and that you can find compilation errors.
-
-<br/>
 
 ## Overview
 
 Once your environment is set, you'll need an [overview](OVERVIEW.md) of the requirements for a device plug-in file.
 
-<br/>
-
 ## Advanced Topics
+
+[Runtime debugging](DEBUGGING.md) your device script.
 
 Customizing Lightning's [user interface](DEVICE-UI.md) for your device.
 
 Inter-device time synchronization [time synch](TIME-SYNCH.md).
-
-<br/>
 
 ## License
 
