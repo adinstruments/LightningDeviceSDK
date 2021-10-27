@@ -13,8 +13,8 @@ import { IDeviceSetting, IDeviceOption, DeviceValueType } from './device-api';
 export class Setting implements IDeviceSetting {
    settingName: string;
    options: IDeviceOption[];
-   value: DeviceValueType;    //This implemented using Object.defineProperty()
-   _value: DeviceValueType;   //The actual value backing the value property
+   value: DeviceValueType; //This implemented using Object.defineProperty()
+   _value: DeviceValueType; //The actual value backing the value property
    display?: string; // This is computed from value and options.
 
    setValue(other: IDeviceSetting) {
@@ -47,15 +47,13 @@ export class Setting implements IDeviceSetting {
       return this._value as number;
    }
 
-
    constructor(
       rawSetting: IDeviceSetting,
       private onValueSet: (
          setting: Setting,
          newValue: DeviceValueType
       ) => DeviceValueType,
-      displayFromValue?: (value: DeviceValueType) => string,
-
+      displayFromValue?: (value: DeviceValueType) => string
    ) {
       const { settingName, value, options } = rawSetting;
 
@@ -83,7 +81,7 @@ export class Setting implements IDeviceSetting {
             if (displayFromValue) {
                return displayFromValue(this._value);
             } else if (options) {
-               const option = options.find(o => o.value === this._value);
+               const option = options.find((o) => o.value === this._value);
                if (option !== undefined) {
                   return option.display;
                }
@@ -95,5 +93,4 @@ export class Setting implements IDeviceSetting {
 
       this.options = options;
    }
-
 }

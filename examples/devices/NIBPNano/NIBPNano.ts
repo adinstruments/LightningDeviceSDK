@@ -44,6 +44,7 @@ import {
 import { StreamRingBufferImpl } from '../../../public/stream-ring-buffer';
 
 import { PluginFeatureTypes } from '../../../public/plugin-api';
+import { DeviceClassBase } from '../../../public/device-class-base';
 
 /**
  * Device driver for FMS Nano Core OEM
@@ -69,10 +70,13 @@ import { PluginFeatureTypes } from '../../../public/plugin-api';
 const kSupportedSamplesPerSec = [200];
 
 export const kDefaultSamplesPerSecIndex = 0;
-export const kDefaultSamplesPerSec = kSupportedSamplesPerSec[kDefaultSamplesPerSecIndex];
+export const kDefaultSamplesPerSec =
+   kSupportedSamplesPerSec[kDefaultSamplesPerSecIndex];
 
 export function findClosestSupportedRateIndex(samplesPerSec: number) {
-   let result = kSupportedSamplesPerSec.findIndex((value) => value <= samplesPerSec);
+   const result = kSupportedSamplesPerSec.findIndex(
+      (value) => value <= samplesPerSec
+   );
    if (result < 0) {
       return kSupportedSamplesPerSec.length - 1;
    }
@@ -82,7 +86,6 @@ export function findClosestSupportedRateIndex(samplesPerSec: number) {
 export function findClosestSupportedRate(samplesPerSec: number) {
    return kSupportedSamplesPerSec[findClosestSupportedRateIndex(samplesPerSec)];
 }
-
 
 const kDefaultCuffSwitchingInterval = 15;
 
@@ -330,8 +333,8 @@ function findVersionData(byteArray: Buffer, versionCmdKeyInd: number): string {
                // TODO: handle these better
                console.warn(
                   'CRC did not match Caculated CRC for: ' +
-                  versionCmd +
-                  ' read command'
+                     versionCmd +
+                     ' read command'
                );
             }
          }
@@ -342,7 +345,7 @@ function findVersionData(byteArray: Buffer, versionCmdKeyInd: number): string {
 }
 
 function getKeyByValue(object: any, value: any): any {
-   return Object.keys(object).find(key => object[key] === value);
+   return Object.keys(object).find((key) => object[key] === value);
 }
 
 const deviceClassId = '06c878c2-9c56-11e8-98d0-529269fb1459';
@@ -1322,8 +1325,8 @@ class NanoParser {
                   // TODO: handle these better
                   console.warn(
                      'CRC did not match Caculated CRC for: ' +
-                     NanoRxSampCmds.kstatusCmd +
-                     ' read command'
+                        NanoRxSampCmds.kstatusCmd +
+                        ' read command'
                   );
                }
 
@@ -1384,8 +1387,8 @@ class NanoParser {
                   // TODO: handle these better
                   console.warn(
                      'CRC did not match Caculated CRC for: ' +
-                     NanoRxSampCmds.kdataCmd +
-                     ' read command'
+                        NanoRxSampCmds.kdataCmd +
+                        ' read command'
                   );
                }
 
@@ -1441,8 +1444,8 @@ class NanoParser {
                   // TODO: handle these better
                   console.warn(
                      'CRC did not match Caculated CRC for: ' +
-                     NanoRxSampCmds.kbeatCmd +
-                     ' read command'
+                        NanoRxSampCmds.kbeatCmd +
+                        ' read command'
                   );
                }
 
@@ -1503,8 +1506,8 @@ class NanoParser {
                   // TODO: handle these better
                   console.warn(
                      'CRC did not match Caculated CRC for: ' +
-                     NanoRxSampCmds.kstatusCmd +
-                     ' read command'
+                        NanoRxSampCmds.kstatusCmd +
+                        ' read command'
                   );
                }
 
@@ -1580,8 +1583,8 @@ class NanoParser {
          // TODO: handle these better
          console.warn(
             'CRC did not match Caculated CRC for: ' +
-            NanoRxSampCmds.kstatusCmd +
-            ' read command'
+               NanoRxSampCmds.kstatusCmd +
+               ' read command'
          );
       }
 
@@ -1643,15 +1646,15 @@ class NanoParser {
                ) {
                   console.error(
                      this.deviceName +
-                     ' - ' +
-                     nanoWarningsArray[nanoWarningCode]
+                        ' - ' +
+                        nanoWarningsArray[nanoWarningCode]
                   );
                   this.criticalError = true;
                } else {
                   console.warn(
                      this.deviceName +
-                     ' - ' +
-                     nanoWarningsArray[nanoWarningCode]
+                        ' - ' +
+                        nanoWarningsArray[nanoWarningCode]
                   );
                }
                this.raisedWarnings.push(nanoWarningCode);
@@ -2424,7 +2427,7 @@ class ProxyDevice implements IProxyDevice {
          if (stream && stream.isEnabled) {
             const nSamples = Math.max(
                bufferSizeInSecs *
-               ((stream.samplesPerSec as IDeviceSetting).value as number),
+                  ((stream.samplesPerSec as IDeviceSetting).value as number),
                kMinOutBufferLenSamples
             );
             this.outStreamBuffers.push(
@@ -2512,13 +2515,14 @@ class ProxyDevice implements IProxyDevice {
  * The DeviceClass object represents this set of devices and can find and create PhysicalDevice
  * objects of its class, as well as the ProxyDevice objects.
  */
-class DeviceClass implements IDeviceClass {
+class DeviceClass extends DeviceClassBase implements IDeviceClass {
    versionInfoArray: string[];
 
    // While worker support for devices is in development.
    runOnMainThread = true;
 
    constructor() {
+      super();
       this.checkDeviceIsPresent = this.checkDeviceIsPresent.bind(this);
       this.versionInfoArray = [];
    }
@@ -2538,7 +2542,7 @@ class DeviceClass implements IDeviceClass {
     * Called when the app shuts down. Chance to release any resources acquired during this object's
     * life.
     */
-   release() { }
+   release() {}
 
    /**
     * @returns the name of the class of devices
@@ -2634,7 +2638,7 @@ class DeviceClass implements IDeviceClass {
       let oldBytes = null;
 
       // connect data handler
-      devStream.on('data', newBytes => {
+      devStream.on('data', (newBytes) => {
          oldBytes = newBytes;
 
          const versStruct = findVersionData(
@@ -2665,7 +2669,7 @@ class DeviceClass implements IDeviceClass {
       });
 
       // connect error handler
-      devStream.on('error', err => {
+      devStream.on('error', (err) => {
          console.error(err); // errors include timeouts
          devStream.destroy(); // stop 'data' and 'error' callbacks
          callback(err, null); // errors include timeouts
@@ -2684,13 +2688,6 @@ class DeviceClass implements IDeviceClass {
       physicalDevice: PhysicalDevice | null
    ) {
       return new ProxyDevice(quarkProxy, physicalDevice);
-   }
-
-   indexOfBestMatchingDevice(
-      descriptor: OpenPhysicalDeviceDescriptor,
-      availablePhysDevices: OpenPhysicalDeviceDescriptor[]
-   ): number {
-      return 0;
    }
 }
 
@@ -2757,7 +2754,7 @@ class NIBPNanoUI implements IDeviceUIApi {
          actionInProgressText: 'Zeroing',
          disabled: !ZERO_SUPPORT,
          calcDisabled: () => isSampling || testModeEnabled,
-         action: callback => {
+         action: (callback) => {
             // Let the UI know we've started a time-consuming action.
             callback &&
                callback({
@@ -2775,12 +2772,12 @@ class NIBPNanoUI implements IDeviceUIApi {
             setTimeout(() => {
                deviceManager
                   .callFunction(pathToDevice, 'hcuZero', JSON.stringify({}))
-                  .then(result => {
+                  .then((result) => {
                      if (result) {
                         NIBPNanoUI.lastHcuStatus = result.hcuStatus;
                      }
                   })
-                  .catch(error => {
+                  .catch((error) => {
                      console.error('HCU zero failed: ' + error);
                   })
                   .finally(() => {

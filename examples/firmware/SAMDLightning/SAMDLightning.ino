@@ -40,6 +40,20 @@ FOR SAMD51:
 
 //#define ENABLE_ADCTIMER_PWMOUT 1
 
+const char* kSerialNumber = "0001";
+
+const char* kFWVersion = "0.9.1";
+
+enum ADIDeviceSynchModes {
+   kDeviceSynchNone = 0 | 0,
+   kDeviceSyncRoundTrip = 1 | 0,
+   kDeviceSyncUSBFrameTimes = 2 | 0,
+   kDeviceSynchUSBLocked = 4 | 0,
+   kDeviceSynchUSBStartOnSpecifiedFrame = 8 | 0,
+   kDeviceSynchUSBFullSuppport = kDeviceSyncRoundTrip|kDeviceSyncUSBFrameTimes|kDeviceSynchUSBLocked|kDeviceSynchUSBStartOnSpecifiedFrame|0,
+};
+
+
 const int kDefaultADCPointsPerSec = 100; //~5000 max with 2 samples (1 point) per packet
 int gADCPointsPerSec = kDefaultADCPointsPerSec; //~5000 max with 2 samples (1 point) per packet
 
@@ -321,6 +335,7 @@ volatile bool gFirstSampleTimeRequested = false;
 
 volatile bool gADCstate = false;
 
+volatile int16_t gStartOnFrame = -1; //-1 means start on the next USB frame
 
 /**
  * Measured one fine step (133 to 134) to give a frequency offset of 5 parts in 10000
@@ -336,8 +351,10 @@ const int kDFLLFineMin = -512;
 #endif
 
 extern "C" void UDD_Handler(void);
+const int32_t kUSBFramePeriodus = 1000;
 
-volatile int sLastFrameNumber = 0;
+
+volatile int16_t gLastFrameNumber = 0;
 volatile int32_t gPrevFrameTick = -1;
 
 volatile int gLastDCOControlVal = 0;
@@ -365,6 +382,8 @@ volatile int32_t sPSDPhaseAccum = 0;
 volatile int32_t gLeadPhaseAccum = 0;
 const int kLeadPhaseTC = 16;
 
+volatile int32_t gLastUSBSOFTimeus = 0;
+
 
 extern "C"
 {
@@ -373,19 +392,38 @@ void USBHandlerHook(void)
 {
 if(USB->DEVICE.INTFLAG.bit.SOF) //Start of USB Frame interrupt
    {
-   digitalWrite(1, gUSBBPinState = !gUSBBPinState );
-   //int32_t SOFtickus = micros();
-
    //Measure phase using Cortex cpu timer. Convert to 0.25 us ticks using a runtime multiply and compile time divides for speed.
    int32_t frameTick = ((SysTick->LOAD  - SysTick->VAL)*(kHighSpeedTimerTicksPerus*1024*1024/(VARIANT_MCK/1000000)))>>20;
+   auto frame_us = frameTick/kHighSpeedTimerTicksPerus;
+   
+   int32_t newUSBSOFTimeus = micros();
+   int16_t frameNumber = USB->DEVICE.FNUM.bit.FNUM;
+
+   //In general, micros() is not reliable when called from within an Interrupt Service Routine
+   //and it is difficult to implement reliably across platforms. 
+   //When the processor is locked to USB, the USB SOF interrupts are happening around the same
+   //time as the 1 kHz system timer interrupts that increment millis.
+   //As a result, the hardware timer part of micros() can wrap before the millis part has been 
+   //incremented.
+   //The following lines check for this case and handle it in a processor independent way.
+   int32_t lastUSBSOFTimeus = gLastUSBSOFTimeus;
+   if(newUSBSOFTimeus-lastUSBSOFTimeus < kUSBFramePeriodus/2)
+      newUSBSOFTimeus += kUSBFramePeriodus;
+
+   //Diagnostic ouput only
+   digitalWrite(1, gUSBBPinState = !gUSBBPinState );
+
    if(gState == kWaitingForUSBSOF)
       {
-      adcTimer.enable(true);
-      gState = kStartingSampling;
+      if(gStartOnFrame == frameNumber || gStartOnFrame < 0)
+         {
+         adcTimer.enable(true);
+         gState = kStartingSampling;
+         }
       }
    //frameus in range [0, 1000)
    //usbd.frameNumber();
-   sLastFrameNumber = USB->DEVICE.FNUM.bit.FNUM;
+   //sLastFrameNumber = USB->DEVICE.FNUM.bit.FNUM;
    //if(gPrevFrameTick >= 0)
       {
       int phase = frameTick;
@@ -431,6 +469,9 @@ if(USB->DEVICE.INTFLAG.bit.SOF) //Start of USB Frame interrupt
       #endif
       #endif
       }
+   gLastFrameNumber = frameNumber;
+   gLastUSBSOFTimeus = newUSBSOFTimeus;
+
    gPrevFrameTick = frameTick;
 
    }
@@ -599,13 +640,19 @@ public:
       mData[0] = tick32us;
       }
 
+   int writeData(Stream &stream) const
+      {
+      int n = stream.write(sPacketCount++);
+      n += stream.write(mTimeRequestNumber);
+      n += stream.write(reinterpret_cast<const uint8_t*>(mData), sizeof(mData));
+      return n;
+      }
+
       //returns number of bytes written
    int write(Stream &stream) const
       {
       int n = stream.write(sHeaderAndPacketType, 3);
-      n += stream.write(sPacketCount++);
-      n += stream.write(mTimeRequestNumber);
-      n += stream.write(reinterpret_cast<const uint8_t*>(mData), sizeof(mData));
+      n += writeData(stream);
       return n;
       }
 
@@ -613,6 +660,33 @@ protected:
 
    int32_t mData[1];
    uint8_t mTimeRequestNumber;
+};
+
+class LatestUSBFrameTimePacket : protected TimePacket
+{
+   const char sHeaderAndPacketType[3] = {'P',0xA0,'L'}; //'L' for latest USB Start Of Frame time
+
+public:
+   LatestUSBFrameTimePacket(int32_t tick32us, uint8_t timeRequestNumber, uint16_t frameNumber, int32_t latestFrameus) :
+      TimePacket(tick32us, timeRequestNumber)
+      {
+      mFrameNumber = frameNumber;
+      mFrameTimeus = latestFrameus;
+      }
+
+      //returns number of bytes written
+   int write(Stream &stream) const
+      {
+      int n = stream.write(sHeaderAndPacketType, 3);
+      n += TimePacket::writeData(stream);
+      n += stream.write(reinterpret_cast<const uint8_t*>(&mFrameNumber), sizeof(mFrameNumber));
+      n += stream.write(reinterpret_cast<const uint8_t*>(&mFrameTimeus), sizeof(mFrameTimeus));
+      return n;
+      }
+
+protected:
+   uint16_t mFrameNumber;
+   int32_t mFrameTimeus;
 };
 
 class FirstSampleTimePacket : protected PacketBase
@@ -640,16 +714,11 @@ protected:
 };
 
 
-void StartSampling()
+void StartSampling(int16_t startOnFrame)
 {
 adcTimer.enable(false);
 NVIC_DisableIRQ(ADC_IRQn);
 NVIC_ClearPendingIRQ(ADC_IRQn);
-
-adc_setup();
-
-//Restart the ADC timer
-startADCTimer(gADCPointsPerSec);
 
 for(int chan(0); chan<kADCChannels;++chan)
    {
@@ -657,8 +726,15 @@ for(int chan(0); chan<kADCChannels;++chan)
    buffer.Clear();
    }
 
+adc_setup();
+
+//Restart the ADC timer
+startADCTimer(gADCPointsPerSec);
+
+
 //digitalWrite(12, LOW); //Clear Buffer overflow
 //Packet::ResetPacketCount();
+gStartOnFrame = startOnFrame;
 gState = kWaitingForUSBSOF;
 
 digitalWrite(LED_BUILTIN, HIGH);
@@ -711,7 +787,15 @@ if(hasRx >= 0)
    switch (cmd)
       {
       case 'b':   //begin sampling
-         StartSampling();
+         {
+         int16_t startOnFrame = -1; //start on next frame
+         if(bytesRead >= 4 && cmdBuf[1] == 'o')
+            {
+            //We a startOnUSBFrame int16
+            startOnFrame = cmdBuf[2]+(cmdBuf[3]<<8);
+            }   
+         StartSampling(startOnFrame);
+         }
          break;
       case 'f':   //first sample time
          gFirstSampleTimeRequested = true;
@@ -767,8 +851,28 @@ if(hasRx >= 0)
 
          break;   
          }
+      case 'u':   //time of last USB SOF
+         {
+         auto irqState = saveIRQState(); //disable interrupts
+         auto lastUSBSOFTimeus = gLastUSBSOFTimeus;
+         auto lastFrameNumber = gLastFrameNumber;
+         int32_t now = micros();
+         restoreIRQState(irqState);
+        
+         auto timeRequestNumber = cmdBuf[1];
+         LatestUSBFrameTimePacket packet(now, timeRequestNumber, lastFrameNumber, lastUSBSOFTimeus);
+         packet.write(Serial);
+         break;
+         }
       case 'v':   //version info
-         Serial.print("ArduinoRT Example V0.9.0 Channels: "+String(kADCChannels)+" $$$");
+         Serial.print("{");
+         Serial.print("\"deviceClass\": \"Arduino_Example\",");
+         Serial.print("\"deviceName\": \"Adafruit Feather M0 Express\",");
+         Serial.print("\"version\": \"" + String(kFWVersion)+"\",");
+         Serial.print("\"numberOfChannels\": "+String(kADCChannels)+",");
+         Serial.print("\"deviceSynchModes\": "+ String(kDeviceSynchUSBFullSuppport)+",");
+         Serial.print("\"serialNumber\": \""+String(kSerialNumber)+"\"");
+         Serial.print("}$$$");
          Packet::ResetPacketCount(); //new session
 
          #ifdef ENABLE_SERIAL_DEBUGGING

@@ -1,9 +1,9 @@
+import { DeviceClassBase } from '../../../public/device-class-base';
 import {
    IDeviceClass,
    TDeviceConnectionType,
    DuplexDeviceConnection,
    OpenPhysicalDevice,
-   OpenPhysicalDeviceDescriptor,
    ProxyDeviceSys
 } from '../../../public/device-api';
 import { DuplexStream } from '../../../public/device-streams';
@@ -22,8 +22,10 @@ import { kDeviceClassId, kTestOpenDeviceClassName, PacketType } from './utils';
  * The DeviceClass object represents this set of devices and can find and create
  * PhysicalDevice objects of its class, as well as the ProxyDevice objects.
  */
-export class DeviceClass implements IDeviceClass {
-   constructor() {}
+export class DeviceClass extends DeviceClassBase implements IDeviceClass {
+   constructor() {
+      super();
+   }
 
    onError(err: Error) {
       console.error(err);
@@ -155,30 +157,6 @@ export class DeviceClass implements IDeviceClass {
          }
       });
       return;
-   }
-
-   indexOfBestMatchingDevice(
-      descriptor: OpenPhysicalDeviceDescriptor,
-      availablePhysDevices: OpenPhysicalDeviceDescriptor[]
-   ): number {
-      //Find devices of the same type
-      const sameType = availablePhysDevices.filter(
-         (it) => it.deviceType === descriptor.deviceType
-      );
-
-      //First check for exact match
-      const index = sameType.findIndex(
-         (it) => it.deviceId === descriptor.deviceId
-      );
-      if (index !== -1) return index;
-
-      //Find device of same type (if possible) with closest number of inputs
-      const available = sameType.length ? sameType : availablePhysDevices;
-      const deltaNInputs = available.map((it, index) => {
-         return { diff: descriptor.numInputs - it.numInputs, index };
-      });
-      deltaNInputs.sort((l, r) => Math.abs(l.diff - r.diff));
-      return deltaNInputs.length ? deltaNInputs[0].index : -1;
    }
 
    /**

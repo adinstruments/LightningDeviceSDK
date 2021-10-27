@@ -1,12 +1,14 @@
 /**
- * Example device driver for an Arduino device firmware (e.g. DueLightning.ino or SAMD51Lightning.ino)
- * that does not support round-trip or USB Frame time synchronization, with the result that Lightning
- * will fall back to "sampling counting" to try and adjust for the crystal oscillator drift between devices.
+ * Example device driver for an Arduino device running a firmware sketch that supports round-trip
+ * clock synchronization to improve inter-device timing accuracy (e.g. DueLightning.ino and SAMD51Lightning.ino).
  *
- * This example does implement two optional methods (on the ProxyDevice object) that can improve the
- * accuracy of the initial inter-device timing at the start of sampling:
- *  getStartDelayMicroSeconds()
- *  getLocalClockTickAtSamplingStart()
+ * This example shows the methods on the ProxyDevice needed to support round-trip clock synchronization:
+ * getRemoteTimePointInfo()
+ * getRemoteTime()
+ * onRemoteTimeEvent()
+ *
+ * If these methods are missing, Lightning will fall back to "sampling counting" to try and
+ * adjust for the crystal oscillator drift between devices.
  *
  * Notes:
  * - Quark is Lightning's C++ sampling engine.
@@ -45,11 +47,12 @@ import {
    TDeviceConnectionType,
    BlockDataFormat,
    OpenPhysicalDeviceDescriptor,
-   TInt64,
    TimePoint,
+   USBTimePoint,
    TimePointInfo,
    ADITimePointInfoFlags,
-   FirstSampleRemoteTime
+   FirstSampleRemoteTime,
+   IDeviceVersionInfo
 } from '../../../public/device-api';
 
 import { Setting } from '../../../public/device-settings';
@@ -61,6 +64,7 @@ import { DuplexStream } from '../../../public/device-streams';
 import { StreamRingBufferImpl } from '../../../public/stream-ring-buffer';
 
 import { Parser } from '../../../public/packet-parser';
+import { DeviceClassBase } from '../../../public/device-class-base';
 
 //Don't fire notifications into Lightning too often!
 const kMinimumSamplingUpdatePeriodms = 50;
@@ -73,11 +77,6 @@ const kSettingsVersion = 1;
 
 const kDataFormat = ~~BlockDataFormat.k16BitBlockDataFormat; // For now!
 
-//Support for compensating for a known fixed delay between asking the device
-//to start sampling and the time when the first sample is actually measured
-//by the ADC on the device.
-const kTimeFromStartToFirstSampleMicroSeconds = 0;
-
 const kSupportedSamplesPerSec = [
    10000.0,
    4000.0,
@@ -88,22 +87,27 @@ const kSupportedSamplesPerSec = [
    100.0
 ];
 
-export const kDefaultSamplesPerSecIndex = 6;
+const kDefaultSamplesPerSecIndex = 6;
 //This needs to match the default rate in the hardware after it reboots!
-export const kDefaultSamplesPerSec = kSupportedSamplesPerSec[kDefaultSamplesPerSecIndex];
+const kDefaultSamplesPerSec =
+   kSupportedSamplesPerSec[kDefaultSamplesPerSecIndex];
 
-export function findClosestSupportedRateIndex(samplesPerSec: number) {
-   let result = kSupportedSamplesPerSec.findIndex((value) => value <= samplesPerSec);
+function findClosestSupportedRateIndex(samplesPerSec: number) {
+   const result = kSupportedSamplesPerSec.findIndex(
+      (value) => value <= samplesPerSec
+   );
    if (result < 0) {
       return kSupportedSamplesPerSec.length - 1;
    }
    return result;
 }
 
-export function findClosestSupportedRate(samplesPerSec: number) {
+function findClosestSupportedRate(samplesPerSec: number) {
    return kSupportedSamplesPerSec[findClosestSupportedRateIndex(samplesPerSec)];
 }
 
+const kAllStreams = -1; //Stream index value that means the setting is the same across
+//all streams, e.g. for this device, the sample rate.
 
 const kMinOutBufferLenSamples = 1024;
 
@@ -183,7 +187,16 @@ export function gainCharFromPosFullScale(posFullScale: number) {
    return '0';
 }
 
-const kStreamNames = ['ADC Input 1', 'ADC Input 2'];
+const kStreamNames = [
+   'ADC Input 1',
+   'ADC Input 2',
+   'ADC Input 3',
+   'ADC Input 4',
+   'ADC Input 5',
+   'ADC Input 6',
+   'ADC Input 7',
+   'ADC Input 8'
+];
 
 const kEnableLogging = false;
 
@@ -197,23 +210,47 @@ export function resetgSampleCountForTesting() {
  * PhysicalDevice is a representation of the connected hardware device
  */
 export class PhysicalDevice implements OpenPhysicalDevice {
+   versionInfo: IDeviceVersionInfo;
    deviceName: string;
    serialNumber: string;
    deviceStream: DuplexStream;
    parser: ParserWithSettings;
    numberOfChannels: number;
+   timePointInfo: TimePointInfo;
 
    constructor(
       private deviceClass: DeviceClass,
       deviceStream: DuplexStream,
       friendlyName: string,
-      versionInfo: string
+      versionInfo: IDeviceVersionInfo
    ) {
-      this.numberOfChannels = kStreamNames.length;
-      this.serialNumber = `ArduinoRT-123`; //TODO: get this from versionInfo (which should be JSON)
+      this.deviceStream = deviceStream;
+      this.versionInfo = versionInfo;
+
+      if (versionInfo.numberOfChannels)
+         this.numberOfChannels = versionInfo.numberOfChannels;
+      else this.numberOfChannels = kStreamNames.length;
+
+      if (versionInfo.deviceName) this.deviceName = versionInfo.deviceName;
+      else
+         this.deviceName =
+            deviceClass.getDeviceClassName() + ': ' + friendlyName;
+
+      if (versionInfo.serialNumber)
+         this.serialNumber = versionInfo.serialNumber;
+      else this.serialNumber = `xxx`; //TODO: get this from versionInfo (which should be JSON)
+
+      this.timePointInfo = new TimePointInfo(
+         { numerator: 1000000 | 0, denominator: 1 | 0 }, //1 MHz (Arduino micros() in microseconds)
+         32 | 0, //The Arduino firmware returns its clock tick as a 32 bit integer
+         ADITimePointInfoFlags.kTPInfoDefault
+      );
+
+      if (versionInfo.deviceSynchModes) {
+         this.timePointInfo.flags |= versionInfo.deviceSynchModes;
+      }
 
       this.parser = new ParserWithSettings(deviceStream, this.numberOfChannels);
-      this.deviceName = deviceClass.getDeviceClassName() + ': ' + friendlyName;
    }
 
    release() {
@@ -247,11 +284,19 @@ export class PhysicalDevice implements OpenPhysicalDevice {
       return this.numberOfChannels;
    }
 
+   getDeviceId() {
+      let deviceId = '';
+      if (this.serialNumber) deviceId += this.serialNumber;
+      if (this.deviceStream && this.deviceStream.source)
+         deviceId += ' [' + this.deviceStream.source.devicePath + ']';
+      return deviceId;
+   }
+
    getDescriptor(): OpenPhysicalDeviceDescriptor {
       return {
-         deviceType: this.deviceClass.getDeviceClassName(),
+         deviceType: this.getDeviceName(),
          numInputs: this.getNumberOfAnalogInputs(),
-         deviceId: this.serialNumber || this.deviceStream.source.devicePath
+         deviceId: this.getDeviceId()
       };
    }
 }
@@ -325,13 +370,19 @@ class StreamSettings implements IDeviceStreamApiImpl {
          }
       );
 
-      this.samplesPerSec = new Setting(
-         settingsData.samplesPerSec,
-         (setting: IDeviceSetting, newValue: DeviceValueType) => {
-            proxy.updateStreamSettings(streamIndex, this, {});
-            return newValue;
-         }
-      );
+      if (!proxy.settings.deviceSamplesPerSec) {
+         proxy.settings.deviceSamplesPerSec = new Setting(
+            settingsData.samplesPerSec,
+            (setting: Setting, newValue: DeviceValueType) => {
+               //Coerce the setting's internal value to the supported rate before updating Quark
+               setting._value = findClosestSupportedRate(newValue as number);
+               proxy.updateStreamSettings(kAllStreams, this, {});
+               return newValue;
+            }
+         );
+      }
+
+      this.samplesPerSec = proxy.settings.deviceSamplesPerSec as Setting;
    }
 }
 
@@ -474,25 +525,45 @@ const kDefaultRate: IDeviceSetting = {
    ]
 };
 
-function getDefaultSettings() {
-   const kDefaultSettings = {
-      version: kSettingsVersion,
-      dataInStreams: kStreamNames.map(() => ({
+class DeviceSettings implements IDeviceProxySettingsSys {
+   version = kSettingsVersion;
+
+   //This device's streams all sample at the same rate
+   deviceSamplesPerSec: Setting;
+
+   dataInStreams: IDeviceStreamApi[];
+
+   constructor(proxy: ProxyDevice, nStreams: number) {
+      //This device's streams all sample at the same rate
+      this.deviceSamplesPerSec = new Setting(
+         kDefaultRate,
+         (setting: IDeviceSetting, newValue: DeviceValueType) => {
+            proxy.updateStreamSettings(kAllStreams, undefined, {});
+            return newValue;
+         }
+      );
+
+      this.dataInStreams = kStreamNames.slice(0, nStreams).map(() => ({
          enabled: kDefaultEnabled,
          inputSettings: kDefaultInputSettings,
-         samplesPerSec: kDefaultRate
-      }))
-   };
+         samplesPerSec: this.deviceSamplesPerSec
+      }));
+   }
+}
+
+function getDefaultSettings(proxy: ProxyDevice, nStreams: number) {
+   const kDefaultSettings = new DeviceSettings(proxy, nStreams);
 
    return kDefaultSettings;
 }
 
-function getDefaultDisabledStreamSettings() {
-   const result = {
-      enabled: kDefaultDisabled,
-      inputSettings: kDefaultInputSettings,
-      samplesPerSec: kDefaultRate
-   };
+function getDefaultDisabledStreamSettings(settings: DeviceSettings) {
+   const result = new (class {
+      enabled = kDefaultDisabled;
+      inputSettings = kDefaultInputSettings;
+      samplesPerSec = settings.deviceSamplesPerSec;
+   })();
+
    return result;
 }
 
@@ -503,7 +574,7 @@ class ProxyDevice implements IProxyDevice {
    /**
     * Any state within "settings" will be saved / loaded by the application.
     */
-   settings: IDeviceProxySettingsSys;
+   settings: DeviceSettings;
 
    lastError: Error | null;
 
@@ -533,8 +604,12 @@ class ProxyDevice implements IProxyDevice {
    constructor(
       quarkProxy: ProxyDeviceSys | null,
       physicalDevice: PhysicalDevice | null,
-      settings: IDeviceProxySettingsSys
+      settings?: IDeviceProxySettingsSys
    ) {
+      if (!settings) {
+         const nStreams = physicalDevice ? physicalDevice.numberOfChannels : 1;
+         settings = getDefaultSettings(this, nStreams);
+      }
       this.outStreamBuffers = [];
       this.proxyDeviceSys = quarkProxy;
       this.physicalDevice = physicalDevice;
@@ -572,8 +647,11 @@ class ProxyDevice implements IProxyDevice {
     * @param nStreams The number of default streams to initialize for.
     */
    initializeSettings(settingsData: IDeviceProxySettingsSys) {
-      const defaultSettings = getDefaultSettings();
-      this.settings = getDefaultSettings();
+      const nDefaultStreams = this.physicalDevice
+         ? this.physicalDevice.numberOfChannels
+         : settingsData.dataInStreams.length;
+      const defaultSettings = getDefaultSettings(this, nDefaultStreams);
+      this.settings = getDefaultSettings(this, nDefaultStreams);
       this.settings.dataInStreams = [];
 
       const nDeviceStreams = this.physicalDevice
@@ -583,11 +661,15 @@ class ProxyDevice implements IProxyDevice {
       const nSettingsStreams = settingsData.dataInStreams.length;
       const nStreams = Math.max(nSettingsStreams, nDeviceStreams);
 
-      const defaultDisabledStreamSettings = getDefaultDisabledStreamSettings();
+      console.log('nStreams =', nStreams);
+
+      const defaultDisabledStreamSettings = getDefaultDisabledStreamSettings(
+         this.settings
+      );
 
       // Ensure the settings have the correct number of data in streams for the current physical
-      // device. This logic is complicated by the fact we fake up physical devices having different
-      // stream counts for testing purposes.
+      // device. This logic is complicated by the fact we support physical devices having different
+      // stream counts (e.g. different numbers of inputs).
       for (let streamIndex = 0; streamIndex < nStreams; ++streamIndex) {
          const defaultStreamSettingsData =
             defaultSettings.dataInStreams[streamIndex] ||
@@ -657,18 +739,31 @@ class ProxyDevice implements IProxyDevice {
 
    updateStreamSettings(
       streamIndex: number,
-      streamSettings: StreamSettings,
+      streamSettings: StreamSettings | undefined,
       config: Partial<IDeviceStreamConfiguration>,
       restartAnySampling = true
    ) {
       if (this.proxyDeviceSys) {
-         this.proxyDeviceSys.setupDataInStream(
-            streamIndex,
-            streamSettings,
-            config,
-            this.applyStreamSettingsToHW(streamIndex, streamSettings),
-            restartAnySampling
-         );
+         if (streamIndex === kAllStreams) {
+            for (let i = 0; i < this.settings.dataInStreams.length; ++i) {
+               const stream = this.settings.dataInStreams[i] as StreamSettings;
+               this.proxyDeviceSys.setupDataInStream(
+                  i,
+                  stream,
+                  config,
+                  this.applyStreamSettingsToHW(i, stream),
+                  restartAnySampling
+               );
+            }
+         } else if (streamSettings) {
+            this.proxyDeviceSys.setupDataInStream(
+               streamIndex,
+               streamSettings,
+               config,
+               this.applyStreamSettingsToHW(streamIndex, streamSettings),
+               restartAnySampling
+            );
+         }
       }
    }
 
@@ -868,7 +963,7 @@ class ProxyDevice implements IProxyDevice {
          if (stream && stream.isEnabled) {
             const nSamples = Math.max(
                bufferSizeInSecs *
-               ((stream.samplesPerSec as IDeviceSetting).value as number),
+                  ((stream.samplesPerSec as IDeviceSetting).value as number),
                kMinOutBufferLenSamples
             );
             this.outStreamBuffers.push(
@@ -887,10 +982,16 @@ class ProxyDevice implements IProxyDevice {
     *
     * @returns if device successfully started to sample
     */
-   startSampling(): boolean {
-      if (!this.parser) return false; // Can't sample if no hardware connection
-
-      return this.parser.startSampling();
+   startSampling(startOnUSBFrame?: number): boolean {
+      if (!this.parser || !this.physicalDevice) return false; // Can't sample if no hardware connection
+      if (
+         this.physicalDevice.timePointInfo.flags &
+         ADITimePointInfoFlags.kDeviceSynchUSBStartOnSpecifiedFrame
+      ) {
+         return this.parser.startSampling(startOnUSBFrame);
+      } else {
+         return this.parser.startSampling();
+      }
    }
 
    /**
@@ -945,22 +1046,64 @@ class ProxyDevice implements IProxyDevice {
       }
    }
 
-   //Optional support for compensating for a known fixed delay between asking the device
-   //to start sampling and the time when the first sample is actually measured
-   //by the ADC on the device.
-   getStartDelayMicroSeconds(): number {
-      return kTimeFromStartToFirstSampleMicroSeconds;
+   /**
+    * Optional state - only need to implement if round-trip time measurements are supported by the
+    * device.
+    *
+    * This is really a property of the physical device, but usually it will be constant for
+    * all devices of the Device Class, define it here for convenience.
+    */
+   static kTimePointInfo = new TimePointInfo(
+      { numerator: 1000000 | 0, denominator: 1 | 0 }, //1 MHz (Arduino micros() in microseconds)
+      32 | 0, //The Arduino firmware returns its clock tick as a 32 bit integer
+      ADITimePointInfoFlags.kTPInfoDefault
+   );
+
+   /**
+    * Optional method - only implement if round-trip time measurements are supported by the
+    *device.
+    */
+   getRemoteTimePointInfo(): TimePointInfo {
+      if (this.physicalDevice) {
+         return this.physicalDevice.timePointInfo;
+      }
+      ProxyDevice.kTimePointInfo;
+      return ProxyDevice.kTimePointInfo;
    }
 
-   //Optional support for providing a more accurate estimate of the time (using the local PC's steady clock)
-   //at which the device actually started sampling
-   getLocalClockTickAtSamplingStart(): TInt64 | undefined {
-      if (this.parser) {
-         return this.parser.localClockAtSamplingStart;
+   /**
+    * Optional method - only implement if round-trip time measurements are supported by the
+    * device.
+    */
+   getRemoteTime(getLatestUSBFrame = false): boolean {
+      if (!this.parser) {
+         const error = new Error('getRemoteTime()');
+         error.name = 'DeviceNotAvailable';
+         //callback(error, null);
+         if (this.proxyDeviceSys) {
+            this.proxyDeviceSys.onRemoteTimeEvent(error, null);
+         }
+         return false;
+      } else {
+         return this.parser.getRemoteTime(getLatestUSBFrame);
       }
-      return undefined;
    }
-} //ProxyDevice
+
+   /**
+    * Optional method - only implement if round-trip time measurements are supported by the
+    * device.
+    * ProxyDeviceSys needs to be notified when time synch packets are received if the device supports
+    * round-trip time inter-device synchronization.
+    */
+   onRemoteTimeEvent(
+      error: Error | null,
+      timePoint: TimePoint | FirstSampleRemoteTime | USBTimePoint | null
+   ): void {
+      if (this.proxyDeviceSys) {
+         this.proxyDeviceSys.onRemoteTimeEvent(error, timePoint);
+      }
+   }
+}
 
 /**
  * The device class is the set of types of device that can share the same settings so that
@@ -969,18 +1112,21 @@ class ProxyDevice implements IProxyDevice {
  * The DeviceClass object represents this set of devices and can find and create PhysicalDevice
  * objects of its class, as well as the ProxyDevice objects.
  */
-export class DeviceClass implements IDeviceClass {
+export class DeviceClass extends DeviceClassBase implements IDeviceClass {
+   constructor() {
+      super();
+   }
    /**
     * Called when the app shuts down. Chance to release any resources acquired during this object's
     * life.
     */
-   release(): void { }
+   release(): void {}
 
    /**
     * Required member for devices that support being run against Lightning's
     * test suite.
     */
-   clearPhysicalDevices(): void { }
+   clearPhysicalDevices(): void {}
 
    onError(err: Error): void {
       console.error(err);
@@ -990,7 +1136,7 @@ export class DeviceClass implements IDeviceClass {
     * @returns the name of the class of devices
     */
    getDeviceClassName(): string {
-      return 'ArduinoNoSync';
+      return 'Arduino_Example';
    }
 
    /**
@@ -998,7 +1144,7 @@ export class DeviceClass implements IDeviceClass {
     */
    getClassId() {
       // UUID generated using https://www.uuidgenerator.net/version1
-      return '917adfc8-d6bf-11ea-87d0-0242ac130003';
+      return 'f6791dd0-2f67-11eb-adc1-0242ac120002';
    }
 
    /**
@@ -1024,24 +1170,18 @@ export class DeviceClass implements IDeviceClass {
    ): void {
       const vid = deviceConnection.vendorId.toUpperCase();
       const pid = deviceConnection.productId.toUpperCase();
-
-      /** Uncomment following 2 lines to disable this device class so that e.g. the ArduinoRoundTrip script finds the device instead */
-      //callback(null, null); // Did not find one of our devices on this connection
-      //return;
-
-      if (
-         !(vid === '2341' && pid === '003E') && //Due Native port 003E
-         //!(vid === '2341' && pid === '003D') && //Due Programming port 003D (not recommended)!
-
-         /** N.B. The following SAMD devices do not have stable timing unless the Arduino firmware (sketch)
-          *  is built using the ADInstruments Arduino core!
-          */
-         !(vid === '239A' && pid === '801B') && //ADAFruit Feather M0 Express
-         !(vid === '239A' && pid === '8022') && //ADAFruit Feather M4
-         !(vid === '1B4F' && pid === 'F016') //Sparkfun Thing Plus SAMD51
-
-         // && !(deviceConnection.manufacturer === 'Arduino LLC (www.arduino.cc)')
-      ) {
+      let deviceName = '';
+      if (vid === '2341' && pid === '003E') deviceName = 'Arduino Due';
+      //Due Native port 003E
+      // else if(vid === '2341' && pid === '003D')
+      //    deviceName = 'Due Programming port';  //not recommended!
+      else if (vid === '239A' && pid === '801B')
+         deviceName = 'ADAFruit Feather M0 Express';
+      else if (vid === '239A' && pid === '8022')
+         deviceName = 'ADAFruit Feather M4';
+      else if (vid === '1B4F' && pid === 'F016')
+         deviceName = 'Sparkfun Thing Plus SAMD51';
+      else {
          callback(null, null); // Did not find one of our devices on this connection
          return;
       }
@@ -1050,7 +1190,8 @@ export class DeviceClass implements IDeviceClass {
       const kTimeoutms = 2000; // Time for device to  respond
       const devStream = new DuplexStream(deviceConnection);
 
-      const friendlyName = deviceConnection.friendlyName;
+      const friendlyName = deviceName; //deviceConnection.friendlyName;
+      const connectionName = deviceConnection.friendlyName;
 
       //node streams default to 'utf8' encoding, which most devices won't understand.
       //With 'utf8' encoding, non-ascii chars, such as:
@@ -1086,20 +1227,52 @@ export class DeviceClass implements IDeviceClass {
          const endPos = resultStr.indexOf('$$$');
 
          if (endPos !== -1) {
-            const startPos = resultStr.indexOf('ArduinoRT');
-            if (startPos >= 0) {
-               // We found an ArduinoRT device
-               clearTimeout(deviceVersionTimeout);
-
-               const versionInfo = resultStr.slice(startPos, endPos);
-               const physicalDevice = new PhysicalDevice(
-                  deviceClass,
-                  devStream,
-                  friendlyName,
-                  versionInfo
-               );
-               callback(null, physicalDevice);
+            //const startPos = resultStr.indexOf('ArduinoRT');
+            const startPos = resultStr.indexOf('{');
+            if (startPos < 0) {
+               callback(null, null); //Device not found
             }
+            const versionInfoJSON = resultStr.slice(startPos, endPos);
+            const versionInfo = JSON.parse(versionInfoJSON);
+            if (
+               !(
+                  versionInfo.deviceClass &&
+                  versionInfo.deviceClass === this.getDeviceClassName()
+               )
+            ) {
+               callback(null, null); //Device not found
+            }
+            // We found an Arduino Example device
+            clearTimeout(deviceVersionTimeout);
+
+            const physicalDevice = new PhysicalDevice(
+               deviceClass,
+               devStream,
+               friendlyName,
+               versionInfo
+            );
+
+            callback(null, physicalDevice);
+
+            // if (startPos >= 0) {
+            //    const versionInfoJSON = resultStr.slice(startPos, endPos);
+            //    const versionInfo = JSON.parse(versionInfoJSON);
+
+            //    // We found an ArduinoRT device
+            //    clearTimeout(deviceVersionTimeout);
+
+            //    //const versionInfo = resultStr.slice(startPos, endPos);
+            //    const physicalDevice = new PhysicalDevice(
+            //       deviceClass,
+            //       devStream,
+            //       friendlyName,
+            //       versionInfo
+            //    );
+            //    //TODO: serial number should come from the firmware JSON version info!
+            //    physicalDevice.serialNumber = connectionName;
+
+            //    callback(null, physicalDevice);
+            // }
          }
       });
 
@@ -1128,18 +1301,7 @@ export class DeviceClass implements IDeviceClass {
       physicalDevice: OpenPhysicalDevice | null
    ): ProxyDevice {
       const physicalTestDevice = physicalDevice as PhysicalDevice | null;
-      return new ProxyDevice(
-         quarkProxy,
-         physicalTestDevice,
-         getDefaultSettings()
-      );
-   }
-
-   indexOfBestMatchingDevice(
-      descriptor: OpenPhysicalDeviceDescriptor,
-      availablePhysDevices: OpenPhysicalDeviceDescriptor[]
-   ): number {
-      return 0;
+      return new ProxyDevice(quarkProxy, physicalTestDevice);
    }
 }
 
