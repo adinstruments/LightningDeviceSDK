@@ -1,6 +1,22 @@
-import { StreamRingBuffer } from './device-api'; //'libs/quark-sys';
+import { StreamRingBuffer, BlockDataFormat } from './device-api'; //'libs/quark-sys';
 
-const kBytesPer16BitSample = 2;
+function getDefaultBytesFromFormat(dataFormat: BlockDataFormat): number {
+   switch (dataFormat) {
+      case BlockDataFormat.k12BitBlockDataFormat:
+      case BlockDataFormat.k16BitBlockDataFormat:
+         return 2;
+
+      case BlockDataFormat.kFloatBlockDataFormat:
+         return 4;
+
+      case BlockDataFormat.k32BitBlockDataFormat:
+      case BlockDataFormat.kDoubleBlockDataFormat:
+         throw 'kDoubleBlockDataFormat, not supported currently';
+
+      default:
+         return 2;
+   }
+}
 
 export class StreamRingBufferImpl implements StreamRingBuffer {
    //public JS interface
@@ -17,14 +33,13 @@ export class StreamRingBufferImpl implements StreamRingBuffer {
    constructor(
       indexInDevice: number,
       minSizeInSamples: number,
-      bytesPerSample = 2
+      private blockDataFormat = BlockDataFormat.k16BitBlockDataFormat
    ) {
       this.indexInDevice = indexInDevice;
       this.inIndex = 0;
       this.outIndex = 0;
 
-      //let buffer = Buffer.alloc(sizeInSamples*2);
-      //let buffer = new ArrayBuffer(412);
+      const bytesPerSample = getDefaultBytesFromFormat(this.blockDataFormat);
 
       const sizePow2 = this.calcPow2n(minSizeInSamples);
       this.lenMask = sizePow2 - 1;
@@ -39,7 +54,34 @@ export class StreamRingBufferImpl implements StreamRingBuffer {
       this.ringBufferBuffer = sharedBuffer;
 
       //ringBufferBuffer shares ringBuffer's memory
-      this.ringBuffer = new Int16Array(this.ringBufferBuffer);
+      this.createRingBuffer(this.blockDataFormat);
+   }
+
+   createRingBuffer(dataFormat: BlockDataFormat) {
+      if (!this.ringBufferBuffer) {
+         return;
+      }
+
+      switch (dataFormat) {
+         case BlockDataFormat.k12BitBlockDataFormat:
+         case BlockDataFormat.k16BitBlockDataFormat: {
+            this.ringBuffer = new Int16Array(this.ringBufferBuffer);
+            break;
+         }
+
+         case BlockDataFormat.kFloatBlockDataFormat: {
+            this.ringBuffer = new Float32Array(this.ringBufferBuffer);
+            break;
+         }
+
+         case BlockDataFormat.k32BitBlockDataFormat:
+         case BlockDataFormat.kDoubleBlockDataFormat:
+            throw 'kDoubleBlockDataFormat, not supported currently';
+
+         default: {
+            this.ringBuffer = new Int16Array(this.ringBufferBuffer);
+         }
+      }
    }
 
    //called by Quark to see if data is available
@@ -60,6 +102,10 @@ export class StreamRingBufferImpl implements StreamRingBuffer {
    }
 
    writeInt(value: number): boolean {
+      return this.writeValue(value);
+   }
+
+   writeValue(value: number): boolean {
       if (!this.freeSpace()) return false;
       this.ringBuffer[this.inIndex++] = value;
       if (this.inIndex >= this.ringBuffer.length) this.inIndex = 0;
@@ -113,7 +159,7 @@ export class StreamRingBufferImpl implements StreamRingBuffer {
    }
 
    //Internal implementation
-   ringBuffer: Int16Array; //View onto ringBufferBuffer
+   ringBuffer: Int16Array | Float32Array; //View onto ringBufferBuffer
    ringBufferBuffer: SharedArrayBuffer; //Buffer; //Memory under ringBuffer (shared with Quark)
    inIndex: number; //read by Quark to see if data is available
    outIndex: number; //written by Quark when data is read from buffer.

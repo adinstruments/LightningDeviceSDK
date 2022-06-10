@@ -177,6 +177,7 @@ export interface StreamRingBuffer {
    count(): number;
    freeSpace(): number;
    writeInt(value: number): boolean;
+   writeValue(value: number): boolean;
 
    //Returns true if whole chunk written
    writeAll(chunk: Int16Array): boolean;
@@ -258,7 +259,6 @@ export interface IDeviceSetting {
 export interface IDeviceOption {
    value: DeviceValueType;
    display: string;
-
    // Some options have associated behaviours such as enabling / disabling other
    // UI elements. For example, Bio Amp's "DC" High pass setting hides the DC
    // Restore button and instead shows Zero.
@@ -372,6 +372,9 @@ export interface IDeviceInputSettingsSys {
    HeadphoneOutput?: IDeviceSetting;
    EEGMode?: IDeviceSetting;
    MainsNotch?: IDeviceSetting;
+
+   // PLC Required
+   RequiresPLCForFeature?: IDeviceSetting;
 
    /**
     * e.g. 'Oximeter Pod' or undefined if a vanilla PowerLab input.
@@ -529,12 +532,15 @@ export interface IDeviceStreamConfiguration {
 const kBlockDataFormatBase = 0x80020000 | 0;
 
 //Defined in libs\quark-sys\libs\LegacyDataInterfaces\IADIDataSink.h
+/**
+ * 32-bit and Double formats are not supported currently
+ *  */
 export enum BlockDataFormat {
    k12BitBlockDataFormat = kBlockDataFormatBase | 0,
    k16BitBlockDataFormat = BlockDataFormat.k12BitBlockDataFormat + 1,
-   k32BitBlockDataFormat = BlockDataFormat.k16BitBlockDataFormat + 1,
+   k32BitBlockDataFormat = BlockDataFormat.k16BitBlockDataFormat + 1, // Not suppored currently
    kFloatBlockDataFormat = BlockDataFormat.k32BitBlockDataFormat + 1,
-   kDoubleBlockDataFormat = BlockDataFormat.kFloatBlockDataFormat + 1
+   kDoubleBlockDataFormat = BlockDataFormat.kFloatBlockDataFormat + 1 // Not supported currently
 }
 
 export interface UnitsInfo {
@@ -580,7 +586,7 @@ export enum DeviceEvent {
    kDeviceStartSamplingWarning = 4 | 0,
    kDeviceStartSamplingUserQuery = 5 | 0,
    kDeviceManagerError = 6 | 0,
-   kDeviceEvent = 7 | 0 //e.g. adding annotations without displaying popup
+   kDeviceEvent = 7 | 0 // Use TMessageFlags for further customization e.g. kMessageAddAnotation adding annotations without displaying popup. Use TMessageFlags
 }
 
 //see /libs/quark-sys\libs/QuarkCOMInterfaces/IOpenDeviceConnection.h
@@ -596,8 +602,10 @@ export enum TMessageSeverity {
 export enum TMessageFlags {
    kMessageFlagsNil = 0 | 0,
    kMessageAddAnotation = 0x80000000 | 0,
-   kMessageError = 0x40000000 | 0,
-   kMessageQueryStop = 0x20000000 | 0
+   kMessageDeviceError = 0x40000000 | 0,
+   kMessageTypeMask = 0x000000ff | 0, // Support 256 exclusive message types
+   kMessageQueryStop = 0x01 | 0,
+   kMessageForceStop = 0x02 | 0
 }
 
 export enum MetaDataColors {
@@ -694,7 +702,7 @@ export interface IDeviceProxyAPI {
 }
 
 export interface IDeviceManagerApi {
-   dispose(): void;
+   dispose(): Promise<void>;
 
    isSampling: boolean;
    setSampling(sampling: boolean): Promise<boolean>;
@@ -727,7 +735,7 @@ export interface IDeviceManagerApi {
     * @param statusType
     */
    getStreamStatus(
-      deviceIndexUnused: number,
+      deviceId: DeviceProxyId,
       streamIndex: number,
       statusType: DeviceInputStatusTypes
    ): string | undefined;
@@ -753,7 +761,7 @@ export interface IDeviceManagerApi {
     * sampling resumes.
     */
    performStreamAction(
-      deviceIndex: number,
+      deviceId: DeviceProxyId,
       streamIndex: number,
       actionType: DeviceInputActionTypes,
       actionValue: string,
@@ -825,8 +833,23 @@ export interface IProxyDevice {
    //allow another proxy to use the device.
    disconnectFromPhysicalDevice(): void;
 
-   //Allocate StreamRingBuffers buffers
-   prepareForSampling(bufferSizeInSecs: number): boolean;
+   /**
+    * @param bufferSizeInSecs should be used to calculate the size in samples of the ring buffers allocated
+    * for each output stream. Quark guarantees to remove samples from these buffers well before they
+    * become full if they are of this length.
+    *
+    * @param streamDataFormats these are the formats that were specified in updateStreamSettings
+    * usually from initilizeSettings. These were used to tell Quark what size each data point is, and are now
+    * being returned to the script so that it can create StreamRingBufferImpl's of the correlating size.
+    *
+    *
+    * @returns if the operation succeeded. If this returns false, the calling code could call getLastError()
+    * to find out what's wrong.
+    */
+   prepareForSampling(
+      bufferSizeInSecs: number,
+      streamDataFormats: BlockDataFormat[]
+   ): boolean;
 
    //Start the device sampling. If the device capabilities include being able
    //to start on a future USB frame, the frame number is passed in.
