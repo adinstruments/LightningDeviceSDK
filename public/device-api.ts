@@ -117,6 +117,7 @@ export interface DeviceConnectionInfo {
    productId: string;
    manufacturer: string;
    serialNumber: string;
+   deviceInstanceId: string;
 }
 
 export enum TFlowControl {
@@ -169,6 +170,7 @@ export interface DuplexDeviceConnection extends DeviceConnection {
 
 export interface IStreamBuffer {
    writeInt(value: number): boolean;
+   writeValue(value: number): boolean;
 }
 
 export interface StreamRingBuffer {
@@ -838,12 +840,12 @@ export interface IProxyDevice {
     * for each output stream. Quark guarantees to remove samples from these buffers well before they
     * become full if they are of this length.
     *
-    * @param streamDataFormats these are the formats that were specified in updateStreamSettings
-    * usually from initilizeSettings. These were used to tell Quark what size each data point is, and are now
+    * @param streamDataFormatse these are the formats that were previously specified in updateStreamSettings
+    * usually from initilizeSettings. These were used to tell Quark what size each data point is, and is now
     * being returned to the script so that it can create StreamRingBufferImpl's of the correlating size.
     *
     *
-    * @returns if the operation succeeded. If this returns false, the calling code could call getLastError()
+    * @returns true if the operation succeeded. If this returns false, the calling code could call getLastError()
     * to find out what's wrong.
     */
    prepareForSampling(
