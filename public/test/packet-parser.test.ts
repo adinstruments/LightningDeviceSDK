@@ -11,7 +11,6 @@ import {
    USBTimePoint,
    FirstSampleRemoteTime
 } from '../../public/device-api';
-import { isMapLike } from 'libs/serializr/src/utils/utils';
 
 type ErrorListener = (err: Error) => {};
 type DataListener = (chunk: Buffer | null) => {};
@@ -123,6 +122,9 @@ class MockStream implements IDuplexStream {
 
 class MockStreamBuffer implements IStreamBuffer {
    writeInt(value: number): boolean {
+      return true;
+   }
+   writeValue(value: number): boolean {
       return true;
    }
 }

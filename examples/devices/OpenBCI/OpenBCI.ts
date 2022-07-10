@@ -728,7 +728,7 @@ class ProxyDevice implements IProxyDevice {
       try {
          connection.stop();
          connection.start();
-      } catch (ex) {
+      } catch (ex: any) {
          callback(null, { connectionError: true, deviceError: ex.message });
          return;
       }
