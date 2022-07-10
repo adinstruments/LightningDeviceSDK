@@ -2,21 +2,12 @@ import { BlockDataFormat, UnitPrefix } from '../../../public/device-api';
 import { UnitsInfoImpl } from '../../../public/device-units';
 import {
    kCRClen,
-   PacketType,
-   IBIRangeMax,
-   kBeatsRange,
-   kBPMRangeMax,
-   kConversionFactor,
-   kCuffCountDownRange,
-   kCuffCountRange,
-   kDecimalPlaces,
-   kPressureRangeMaxMmHg,
-   kQualRange,
    kSTX,
    kSupportedSamplesPerSec,
    NanoChannels,
    VersionPacketType,
-   kBaseVersionInfo
+   kBaseVersionInfo,
+   DefaultUnits
 } from './constants';
 
 export function findClosestSupportedRateIndex(samplesPerSec: number) {
@@ -94,7 +85,7 @@ export function parseAndLogHardwareInfo(byteArray: Buffer) {
          break;
    }
 
-   const serialNumber = byteArray.slice(0x1c, 0x1c + 16); // can be up to 100 bytes
+   const serialNumber = byteArray.slice(0x1c, 0x1c + 100); // can be up to 100 bytes
    console.log('Serial No. ' + serialNumber);
    return { serialNumber: serialNumber.toString(), hwVersion };
 }
@@ -110,274 +101,25 @@ export function parseAndLogVersionStruct(byteArray: Buffer) {
    console.log('Protocol Version: ' + protocolVersion[0]);
 }
 
-export function getKeyByValue(object: any, value: any): any {
-   return Object.keys(object).find((key) => object[key] === value);
-}
-
 export function getDataFormat() {
-   return ~~BlockDataFormat.kFloatBlockDataFormat;
+   return BlockDataFormat.kFloatBlockDataFormat;
 }
 
-export function packetTypeToLength(packetType: PacketType) {
-   let length = 0;
-
-   switch (packetType) {
-      case PacketType.Beat2BDataTransmission:
-         length = 15;
-         break;
-
-      case PacketType.DataTransmission:
-         length = 10;
-         break;
-
-      case PacketType.Status:
-         length = 16;
-         break;
-
-      case PacketType.VersionInfo:
-         length = 130;
-         break;
-
-      default:
-         return 0;
+export function getDefaultUnits(channelIndex: NanoChannels) {
+   if (channelIndex > NanoChannels.kAutoCalCountdown) {
+      return new UnitsInfoImpl(
+         'V', //unit name
+         UnitPrefix.kNoPrefix, //unit prefix
+         2, //defaultDecPlaces
+         32768, //maxInPrefixedUnits - determines the displayed range in gain/rate settings
+         32768, //maxInADCValues
+         0, //minInPrefixedUnits
+         0, //minInADCValues
+         32678, //maxValidADCValue - affects the default drag scale range max
+         0 //minValidADCValue - affects the default drag scale range min
+      );
    }
-
-   return length + kCRClen;
-}
-
-export function getDefaultUnits(channelIndex: number) {
-   switch (channelIndex) {
-      case NanoChannels.kBP:
-         return new UnitsInfoImpl(
-            'mmHg', //unit name
-            UnitPrefix.kNoPrefix, //unit prefix
-            kDecimalPlaces, //defaultDecPlaces
-            kPressureRangeMaxMmHg, //maxInPrefixedUnits - determines the displayed range in gain/rate settings
-            kPressureRangeMaxMmHg * kConversionFactor, //maxInADCValues
-            0, //minInPrefixedUnits
-            0, //minInADCValues
-            kPressureRangeMaxMmHg * kConversionFactor, //maxValidADCValue - affects the default drag scale range max
-            0 //minValidADCValue - affects the default drag scale range min
-         );
-
-      case NanoChannels.kBPHC:
-         return new UnitsInfoImpl(
-            'mmHg', //unit name
-            UnitPrefix.kNoPrefix, //unit prefix
-            kDecimalPlaces, //defaultDecPlaces
-            kPressureRangeMaxMmHg, //maxInPrefixedUnits - determines the displayed range in gain/rate settings
-            kPressureRangeMaxMmHg * kConversionFactor, //maxInADCValues
-            0, //minInPrefixedUnits
-            0, //minInADCValues
-            kPressureRangeMaxMmHg * kConversionFactor, //maxValidADCValue - affects the default drag scale range max
-            0 //minValidADCValue - affects the default drag scale range min
-         );
-
-      case NanoChannels.kHGT:
-         return new UnitsInfoImpl(
-            'mmHg', //unit name
-            UnitPrefix.kNoPrefix, //unit prefix
-            kDecimalPlaces, //defaultDecPlaces
-            kPressureRangeMaxMmHg, //maxInPrefixedUnits - determines the displayed range in gain/rate settings
-            kPressureRangeMaxMmHg * kConversionFactor, //maxInADCValues
-            0, //minInPrefixedUnits
-            0, //minInADCValues
-            kPressureRangeMaxMmHg * kConversionFactor, //maxValidADCValue - affects the default drag scale range max
-            0 //minValidADCValue - affects the default drag scale range min
-         );
-
-      case NanoChannels.kSYS:
-         return new UnitsInfoImpl(
-            'mmHg', //unit name
-            UnitPrefix.kNoPrefix, //unit prefix
-            kDecimalPlaces, //defaultDecPlaces
-            kPressureRangeMaxMmHg, //maxInPrefixedUnits - determines the displayed range in gain/rate settings
-            kPressureRangeMaxMmHg * kConversionFactor, //maxInADCValues
-            0, //minInPrefixedUnits
-            0, //minInADCValues
-            kPressureRangeMaxMmHg * kConversionFactor, //maxValidADCValue - affects the default drag scale range max
-            0 //minValidADCValue - affects the default drag scale range min
-         );
-
-      case NanoChannels.kSYSHC:
-         return new UnitsInfoImpl(
-            'mmHg', //unit name
-            UnitPrefix.kNoPrefix, //unit prefix
-            kDecimalPlaces, //defaultDecPlaces
-            kPressureRangeMaxMmHg, //maxInPrefixedUnits - determines the displayed range in gain/rate settings
-            kPressureRangeMaxMmHg * kConversionFactor, //maxInADCValues
-            0, //minInPrefixedUnits
-            0, //minInADCValues
-            kPressureRangeMaxMmHg * kConversionFactor, //maxValidADCValue - affects the default drag scale range max
-            0 //minValidADCValue - affects the default drag scale range min
-         );
-
-      case NanoChannels.kMAP:
-         return new UnitsInfoImpl(
-            'mmHg', //unit name
-            UnitPrefix.kNoPrefix, //unit prefix
-            kDecimalPlaces, //defaultDecPlaces
-            kPressureRangeMaxMmHg, //maxInPrefixedUnits - determines the displayed range in gain/rate settings
-            kPressureRangeMaxMmHg * kConversionFactor, //maxInADCValues
-            0, //minInPrefixedUnits
-            0, //minInADCValues
-            kPressureRangeMaxMmHg * kConversionFactor, //maxValidADCValue - affects the default drag scale range max
-            0 //minValidADCValue - affects the default drag scale range min
-         );
-
-      case NanoChannels.kMAPHC:
-         return new UnitsInfoImpl(
-            'mmHg', //unit name
-            UnitPrefix.kNoPrefix, //unit prefix
-            kDecimalPlaces, //defaultDecPlaces
-            kPressureRangeMaxMmHg, //maxInPrefixedUnits - determines the displayed range in gain/rate settings
-            kPressureRangeMaxMmHg * kConversionFactor, //maxInADCValues
-            0, //minInPrefixedUnits
-            0, //minInADCValues
-            kPressureRangeMaxMmHg * kConversionFactor, //maxValidADCValue - affects the default drag scale range max
-            0 //minValidADCValue - affects the default drag scale range min
-         );
-
-      case NanoChannels.kDIA:
-         return new UnitsInfoImpl(
-            'mmHg', //unit name
-            UnitPrefix.kNoPrefix, //unit prefix
-            kDecimalPlaces, //defaultDecPlaces
-            kPressureRangeMaxMmHg, //maxInPrefixedUnits - determines the displayed range in gain/rate settings
-            kPressureRangeMaxMmHg * kConversionFactor, //maxInADCValues
-            0, //minInPrefixedUnits
-            0, //minInADCValues
-            kPressureRangeMaxMmHg * kConversionFactor, //maxValidADCValue - affects the default drag scale range max
-            0 //minValidADCValue - affects the default drag scale range min
-         );
-
-      case NanoChannels.kDIAHC:
-         return new UnitsInfoImpl(
-            'mmHg', //unit name
-            UnitPrefix.kNoPrefix, //unit prefix
-            kDecimalPlaces, //defaultDecPlaces
-            kPressureRangeMaxMmHg, //maxInPrefixedUnits - determines the displayed range in gain/rate settings
-            kPressureRangeMaxMmHg * kConversionFactor, //maxInADCValues
-            0, //minInPrefixedUnits
-            0, //minInADCValues
-            kPressureRangeMaxMmHg * kConversionFactor, //maxValidADCValue - affects the default drag scale range max
-            0 //minValidADCValue - affects the default drag scale range min
-         );
-
-      case NanoChannels.kHR:
-         return new UnitsInfoImpl(
-            'bpm', //unit name
-            UnitPrefix.kNoPrefix, //unit prefix
-            0, //defaultDecPlaces
-            kBPMRangeMax, //maxInPrefixedUnits - determines the displayed range in gain/rate settings
-            kBPMRangeMax * kConversionFactor, //maxInADCValues
-            0, //minInPrefixedUnits
-            0, //minInADCValues
-            kBPMRangeMax * kConversionFactor, //maxValidADCValue - affects the default drag scale range max
-            0 //minValidADCValue - affects the default drag scale range min
-         );
-
-      case NanoChannels.kIBI:
-         return new UnitsInfoImpl(
-            's', //unit name
-            UnitPrefix.kMilli, //unit prefix
-            0, //defaultDecPlaces
-            IBIRangeMax, //maxInPrefixedUnits - determines the displayed range in gain/rate settings
-            IBIRangeMax, //maxInADCValues
-            0, //minInPrefixedUnits
-            0, //minInADCValues
-            IBIRangeMax, //maxValidADCValue - affects the default drag scale range max
-            0 //minValidADCValue - affects the default drag scale range min
-         );
-
-      case NanoChannels.kActiveCuff:
-         return new UnitsInfoImpl(
-            'CuffNum', //unit name
-            UnitPrefix.kNoPrefix, //unit prefix
-            0, //defaultDecPlaces
-            kCuffCountRange, //maxInPrefixedUnits - determines the displayed range in gain/rate settings
-            kCuffCountRange, //maxInADCValues
-            0, //minInPrefixedUnits
-            0, //minInADCValues
-            kCuffCountRange, //maxValidADCValue - affects the default drag scale range max
-            0 //minValidADCValue - affects the default drag scale range min
-         );
-
-      case NanoChannels.kCuffCountdown:
-         return new UnitsInfoImpl(
-            'SecondsLeft', //unit name
-            UnitPrefix.kNoPrefix, //unit prefix
-            0, //defaultDecPlaces
-            kCuffCountDownRange, //maxInPrefixedUnits - determines the displayed range in gain/rate settings
-            kCuffCountDownRange, //maxInADCValues
-            0, //minInPrefixedUnits
-            0, //minInADCValues
-            kCuffCountDownRange, //maxValidADCValue - affects the default drag scale range max
-            0 //minValidADCValue - affects the default drag scale range min
-         );
-
-      case NanoChannels.kQualLevel:
-         return new UnitsInfoImpl(
-            'QualLevel', //unit name
-            UnitPrefix.kNoPrefix, //unit prefix
-            0, //defaultDecPlaces
-            kQualRange, //maxInPrefixedUnits - determines the displayed range in gain/rate settings
-            kQualRange, //maxInADCValues
-            0, //minInPrefixedUnits
-            0, //minInADCValues
-            kQualRange, //maxValidADCValue - affects the default drag scale range max
-            0 //minValidADCValue - affects the default drag scale range min
-         );
-
-      case NanoChannels.kAutoCalCountdown:
-         return new UnitsInfoImpl(
-            'BeatsLeft', //unit name
-            UnitPrefix.kNoPrefix, //unit prefix
-            0, //defaultDecPlaces
-            kBeatsRange, //maxInPrefixedUnits - determines the displayed range in gain/rate settings
-            kBeatsRange, //maxInADCValues
-            0, //minInPrefixedUnits
-            0, //minInADCValues
-            kBeatsRange, //maxValidADCValue - affects the default drag scale range max
-            0 //minValidADCValue - affects the default drag scale range min
-         );
-
-      default:
-         return new UnitsInfoImpl(
-            'V', //unit name
-            UnitPrefix.kNoPrefix, //unit prefix
-            2, //defaultDecPlaces
-            32768, //maxInPrefixedUnits - determines the displayed range in gain/rate settings
-            32768, //maxInADCValues
-            0, //minInPrefixedUnits
-            0, //minInADCValues
-            32678, //maxValidADCValue - affects the default drag scale range max
-            0 //minValidADCValue - affects the default drag scale range min
-         );
-   }
-}
-
-/**
- * CRC-8 Dallas/Maxim - x^8 + x^5 + x^4 + x^1
- * @param payload
- * @returns
- */
-export function calcCRC(payload: number[]) {
-   let crc = 0 | 0;
-   for (let chrCount = 0; chrCount < payload.length; ++chrCount) {
-      let chr = payload[chrCount];
-
-      for (let bitCount = 0; bitCount < 8; ++bitCount) {
-         const mix = (chr ^ crc) & 1;
-
-         crc >>= 1;
-         chr >>= 1;
-
-         if (mix) crc ^= 0x8c;
-      }
-   }
-
-   return crc;
+   return UnitsInfoImpl.createFromUnitsInfo(DefaultUnits[channelIndex]);
 }
 
 /**
@@ -436,4 +178,13 @@ export function calcCRC2(payload: Uint8Array, start: number, end: number) {
    }
 
    return crc;
+}
+
+/**
+ * CRC-8 Dallas/Maxim - x^8 + x^5 + x^4 + x^1
+ * @param payload
+ * @returns
+ */
+export function calcCRC(payload: number[]) {
+   return calcCRC2(new Uint8Array(payload), 0, payload.length);
 }

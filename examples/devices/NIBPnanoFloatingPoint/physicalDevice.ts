@@ -5,7 +5,7 @@ import {
 } from '../../../public/device-api';
 import { DeviceClass } from './deviceClass';
 import { NanoParser } from './nanoParser';
-import { NanoChannels } from './constants';
+import { kStreamNames } from './constants';
 
 const kNIBPPhysicalDeviceName = 'Human NIBP Nano Floating Point';
 /**
@@ -28,7 +28,7 @@ export class PhysicalDevice implements OpenPhysicalDevice {
    ) {
       this.deviceClass = deviceClass;
       this.deviceConnection = deviceConnection;
-      this.numberOfChannels = Object.keys(NanoChannels).length / 2;
+      this.numberOfChannels = kStreamNames.length;
       this.onError = this.onError.bind(this);
       this.parser = parser;
       this.serialNumber = serialNumber;

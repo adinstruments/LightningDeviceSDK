@@ -19,6 +19,7 @@ import {
    NanoTxSampCmds,
    deviceName
 } from './constants';
+import { debugLog } from './enableLogging';
 import { NanoParser } from './nanoParser';
 import { PhysicalDevice } from './physicalDevice';
 import {
@@ -28,7 +29,6 @@ import {
    StreamSettings
 } from './settings';
 import { findClosestSupportedRate } from './utils';
-import { kEnableLogging } from './enableLogging';
 
 /**
  * The ProxyDevice object is created for each recording. Manages hardware settings and sampling.
@@ -46,7 +46,7 @@ export class ProxyDevice implements IProxyDevice {
     */
    get isSampling() {
       // Need to reset this even if sampling stops because the device went bad
-      return this.parser ? this.parser.isSampling() : false;
+      return this.parser?.isSampling() ?? false;
    }
 
    // Pass null for PhysicalDevice when proxy created in absence of hardware
@@ -71,24 +71,45 @@ export class ProxyDevice implements IProxyDevice {
       this.applyStreamSettingsToHW = this.applyStreamSettingsToHW.bind(this);
 
       settings = settings ?? NIBPSettings.defaults(this);
-      if (kEnableLogging) console.log('Constructing Proxy', settings);
+      debugLog('Constructing Proxy', settings);
       this.initializeSettings(settings);
    }
 
    //hcuZero callback is called on HCU zero button click from settings UI
-   hcuZero: (
+   hcuZero(
       argJson: unknown,
       callback: (
          error: Error | null,
          result: { hcuStatus: string } | null
       ) => void
-   ) => void;
+   ) {
+      if (this.parser) {
+         // When the zero process finishes, allow the parser to invoke our done callback.
+         this.setHCUZeroCallback(callback);
+
+         // ensure the 'error' from last HCU zero is cleared, if a HCU fails
+         // it puts the nano into it's 'error' state and won't respond to future kHCUZero cmds
+         // stupid firmware...
+         this.parser.inStream.write(NanoTxSampCmds.kClearFirstError);
+
+         // send first kHCUZero command then...
+         this.parser.inStream.write(NanoTxSampCmds.kHCUZero);
+
+         // wait 500ms, do it again. aparently the nano doesn't always respond to just 1,
+         // this increases the reliablity at little cost
+         setTimeout(() => {
+            this.parser?.inStream.write(NanoTxSampCmds.kHCUZero), 500;
+         });
+      } else {
+         throw new Error(
+            'PROXY HCU can not be zeroed before connecting to the physical device'
+         );
+      }
+   }
 
    //switchNow callback is called on switchNow button click from settings UI
    switchNow = (argJson: unknown, callback: () => void) => {
-      if (this.parser) {
-         this.parser.inStream.write(NanoTxSampCmds.kSwitchCuffs);
-      }
+      this.parser?.inStream.write(NanoTxSampCmds.kSwitchCuffs);
       callback();
    };
 
@@ -106,33 +127,11 @@ export class ProxyDevice implements IProxyDevice {
       const kHCUZeroTimeoutMs = 5000;
 
       setTimeout(() => {
-         this.hcuZeroCallback &&
-            this.hcuZeroCallback(null, {
-               hcuStatus: 'HCU zero timed out. Try again.'
-            });
+         this.hcuZeroCallback?.(null, {
+            hcuStatus: 'HCU zero timed out. Try again.'
+         });
       }, kHCUZeroTimeoutMs);
    }
-
-   private doHcuZero = (parser: NanoParser | null) => (
-      argJson: unknown,
-      callback: (
-         error: Error | null,
-         result: { hcuStatus: string } | null
-      ) => void
-   ): void => {
-      if (parser) {
-         // When the zero process finishes, allow the parser to invoke our done callback.
-         this.setHCUZeroCallback(callback);
-         parser.inStream.write(NanoTxSampCmds.kHCUZero);
-      } else {
-         callback(
-            new Error(
-               'PROXY HCU can not be zeroed before connecting to the physical device'
-            ),
-            null
-         );
-      }
-   };
 
    clone(quarkProxy: ProxyDeviceSys) {
       return new ProxyDevice(quarkProxy, this.physicalDevice, this.settings);
@@ -141,6 +140,7 @@ export class ProxyDevice implements IProxyDevice {
    release() {
       if (this.proxyDeviceSys) {
          this.proxyDeviceSys.release();
+         this.proxyDeviceSys = null;
       }
    }
 
@@ -156,7 +156,7 @@ export class ProxyDevice implements IProxyDevice {
     * @param nStreams The number of default streams to initialize for.
     */
    initializeSettings(settingsData?: INIBPSettings) {
-      if (kEnableLogging) console.log('initializeSettings');
+      debugLog('initializeSettings');
       const physicalDevice = this.physicalDevice;
 
       const nDeviceInputs = physicalDevice
@@ -212,15 +212,13 @@ export class ProxyDevice implements IProxyDevice {
       config: Partial<IDeviceStreamConfiguration>,
       restartAnySampling = true
    ) {
-      if (this.proxyDeviceSys) {
-         this.proxyDeviceSys.setupDataInStream(
-            streamIndex,
-            streamSettings,
-            config,
-            this.applyStreamSettingsToHW(streamIndex, streamSettings),
-            restartAnySampling
-         );
-      }
+      this.proxyDeviceSys?.setupDataInStream(
+         streamIndex,
+         streamSettings,
+         config,
+         this.applyStreamSettingsToHW(streamIndex, streamSettings),
+         restartAnySampling
+      );
    }
 
    /**
@@ -240,18 +238,14 @@ export class ProxyDevice implements IProxyDevice {
       return (error: Error | null, type: any) => {
          if (error) console.error(error);
          else if (type === SysStreamEventType.kApplyStreamSettingsToHardware) {
-            // Apply streamSettings to streamIndex
+            // This device doesn't have any stream specific settings
+            // to change in hardware
          }
       };
    }
 
    getOutBufferInputIndices() {
-      const result = new Int32Array(this.outStreamBuffers.length);
-      let i = 0;
-      for (const buf of this.outStreamBuffers) {
-         result[i++] = buf.inIndex;
-      }
-      return result;
+      return Int32Array.from(this.outStreamBuffers, (buf) => buf.inIndex);
    }
 
    setOutBufferOutputIndices(indices: Int32Array) {
@@ -279,19 +273,14 @@ export class ProxyDevice implements IProxyDevice {
       if (this.parser === null) {
          this.connectToPhysicalDevice();
       }
-      if (kEnableLogging) console.log('setPhysicalDevice()');
+      debugLog('setPhysicalDevice()');
       // If the hardware capabilities have changed, this is where the process
       // to translate from existing settings is performed.
       // Where hardware capabilities are reduced, the existing settings should
       // be left alone (in case original hardware comes back in future).
       // e.g. set hwSupport = false on the relevant setting.
       // Create the settings structure, copying our saved settings info into it.
-      this.initializeSettings(
-         this.settings
-      ); /*
-         this.settingsFromLoad.dataInStreams.length,
-         this.settingsFromLoad
-      );*/
+      this.initializeSettings(this.settings);
       return true;
    }
 
@@ -303,7 +292,7 @@ export class ProxyDevice implements IProxyDevice {
     * @returns whether the operation succeeded.
     */
    setSettings(settings: INIBPSettings) {
-      if (kEnableLogging) console.log('ProxyDevice.setSettings()');
+      debugLog('ProxyDevice.setSettings()');
       // Create the settings structure, copying our saved settings info into it.
       this.initializeSettings(settings);
 
@@ -327,7 +316,7 @@ export class ProxyDevice implements IProxyDevice {
     * @returns the last error as a string
     */
    getLastError() {
-      return this.lastError ? this.lastError.message : '';
+      return this.lastError?.message ?? '';
    }
 
    /**
@@ -337,9 +326,7 @@ export class ProxyDevice implements IProxyDevice {
     * @returns device name
     */
    getDeviceName() {
-      if (this.physicalDevice) return this.physicalDevice.getDeviceName();
-
-      return '';
+      return this.physicalDevice?.getDeviceName() ?? '';
    }
 
    /**
@@ -361,7 +348,6 @@ export class ProxyDevice implements IProxyDevice {
    connectToPhysicalDevice() {
       if (this.parser) {
          console.warn('connectToPhysicalDevice: already connected!');
-         this.hcuZero = this.doHcuZero(this.parser);
 
          return true;
       }
@@ -370,7 +356,6 @@ export class ProxyDevice implements IProxyDevice {
          this.parser = this.physicalDevice.parser;
          this.settings.onPhysicalDeviceConnected(this.parser);
          this.parser.setProxyDevice(this);
-         this.hcuZero = this.doHcuZero(this.parser);
 
          return true;
       }
@@ -525,21 +510,19 @@ export class ProxyDevice implements IProxyDevice {
       streamIndex?: number
    ) {
       const stream = streamIndex !== undefined ? streamIndex : 0;
-      if (this.proxyDeviceSys) {
-         this.proxyDeviceSys?.onDeviceEvent(
-            DeviceEvent.kDeviceEvent,
-            this.getDeviceName(),
-            message,
-            {
-               flags: TMessageFlags.kMessageAddAnotation,
-               streamIndex: stream, // annotation on first device channel
-               metadata: {
-                  tags: [{ name: `${this.getDeviceName()}`, type: 'onStart' }],
-                  colorIndex: color
-               }
+      this.proxyDeviceSys?.onDeviceEvent(
+         DeviceEvent.kDeviceEvent,
+         this.getDeviceName(),
+         message,
+         {
+            flags: TMessageFlags.kMessageAddAnotation,
+            streamIndex: stream, // annotation on first device channel
+            metadata: {
+               tags: [{ name: `${this.getDeviceName()}`, type: 'onStart' }],
+               colorIndex: color
             }
-         );
-      }
+         }
+      );
    }
 
    /**

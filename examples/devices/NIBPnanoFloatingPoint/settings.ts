@@ -14,8 +14,7 @@ import {
    kDefaultCuffSwitchingInterval,
    kDefaultSamplesPerSecIndex,
    kStreamNames,
-   kSupportedSamplesPerSec,
-   NanoChannels
+   kSupportedSamplesPerSec
 } from './constants';
 import { NanoParser } from './nanoParser';
 import { ProxyDevice } from './proxy';
@@ -162,7 +161,7 @@ export class NIBPSettings implements INIBPSettings {
    };
 
    protected constructor(proxy: ProxyDevice) {
-      this.dataInStreams = Object.keys(NanoChannels).map((key, index) => ({
+      this.dataInStreams = kStreamNames.map((key, index) => ({
          enabled: NIBPSettings.defaultEnabled,
          samplesPerSec: NIBPSettings.defaultRate,
          inputSettings: NIBPSettings.defaultInputSettings(index)

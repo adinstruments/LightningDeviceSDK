@@ -24,7 +24,7 @@ export class NIBPNanoUI implements IDeviceUIApi {
 
    // Store the result of the last HCU zero operation so it can be displayed to the
    // user.
-   private static lastHcuStatus = '';
+   private lastHcuStatus = '';
 
    /**
     * Called by Lightning when the user wishes to configure the device.
@@ -65,11 +65,10 @@ export class NIBPNanoUI implements IDeviceUIApi {
          calcDisabled: () => isSampling,
          action: (callback) => {
             // Let the UI know we've started a time-consuming action.
-            callback &&
-               callback({
-                  type: 'started',
-                  options: 'default'
-               });
+            callback?.({
+               type: 'started',
+               options: 'default'
+            });
 
             // Make the process take a wee bit of time so the user feels the button click
             // actually did something.
@@ -80,26 +79,24 @@ export class NIBPNanoUI implements IDeviceUIApi {
                      .callFunction('hcuZero', JSON.stringify({}))
                      .then((result) => {
                         if (result) {
-                           NIBPNanoUI.lastHcuStatus = result.hcuStatus;
+                           this.lastHcuStatus = result.hcuStatus;
                         }
                      })
                      .catch((error) => {
-                        NIBPNanoUI.lastHcuStatus = 'HCU zero failed';
+                        this.lastHcuStatus = 'HCU zero failed';
                         console.error('HCU zero failed: ' + error);
                      })
                      .finally(() => {
                         // We've finished, tell Lightning to re-enable other UI elements.
-                        callback &&
-                           callback({
-                              type: 'finished',
-                              options: 'refresh all'
-                           });
+                        callback?.({
+                           type: 'finished',
+                           options: 'refresh all'
+                        });
                      });
                } else {
                   setTimeout(
                      () =>
-                        callback &&
-                        callback({
+                        callback?.({
                            type: 'failed',
                            message:
                               'Zeroing failed for an unknown reason. Please try again.'
@@ -112,11 +109,11 @@ export class NIBPNanoUI implements IDeviceUIApi {
       });
 
       //The lastHcuStatus is retreived after first HCU zero callback
-      if (NIBPNanoUI.lastHcuStatus) {
+      if (this.lastHcuStatus) {
          elements.push({
             type: 'message',
             label: '',
-            text: NIBPNanoUI.lastHcuStatus
+            text: this.lastHcuStatus
          });
       }
 
@@ -153,11 +150,10 @@ export class NIBPNanoUI implements IDeviceUIApi {
             disabled: !isSampling,
             action: (callback) => {
                // Let the UI know we've started a time-consuming action.
-               callback &&
-                  callback({
-                     type: 'started',
-                     options: 'default'
-                  });
+               callback?.({
+                  type: 'started',
+                  options: 'default'
+               });
 
                // Make the process take a wee bit of time so the user feels the button click
                // actually did something.
@@ -168,11 +164,10 @@ export class NIBPNanoUI implements IDeviceUIApi {
                         .callFunction('switchNow', JSON.stringify({}))
                         .finally(() => {
                            // We've finished, tell Lightning to re-enable other UI elements.
-                           callback &&
-                              callback({
-                                 type: 'finished',
-                                 options: 'refresh all'
-                              });
+                           callback?.({
+                              type: 'finished',
+                              options: 'refresh all'
+                           });
                         });
                   }
                }, 200);

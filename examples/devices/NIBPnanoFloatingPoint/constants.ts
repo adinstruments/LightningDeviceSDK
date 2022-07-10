@@ -1,3 +1,4 @@
+import { UnitPrefix, UnitsInfo } from '../../../public/device-api';
 import { calcCRC2, code, nanoWriteMessage, toBytesInt32 } from './utils';
 
 export const deviceName = 'Human NIBP Nano Floating Point';
@@ -69,8 +70,22 @@ export enum CuffMode {
    UseCuff2 = 2,
    SwitchCuffs = 3
 }
+export const kCuffIsSwitching = 0x3e;
+export type CuffSwitchInterval = 0 | 1 | 15 | 30 | 60 | 0x3f; // 0 = disable, // 0x3f = reset
 
-export type CuffSwitchInterval = 0 | 1 | 15 | 30 | 60; // 0 = disable
+function switchIntervalCommandFunction(interval: CuffSwitchInterval) {
+   const message = new Uint8Array([
+      kSTX,
+      0x02,
+      0x02,
+      kSTX,
+      0x63,
+      (interval << 2) | 0x00, // interval in mins is at bits 2-7
+      0
+   ]);
+   message[6] = calcCRC2(message, 4, 6);
+   return message;
+}
 
 export enum NanoTestTypes {
    SteadyPressure = 0x01, // Matches the value the hardware expects
@@ -91,30 +106,10 @@ export const NanoTxSampCmds = {
    kAlive: new Uint8Array([kSTX, 0x01, 0x01, kSTX, 0x61, 0x3b]),
 
    switchIntervalCommand: (interval: CuffSwitchInterval) => {
-      const message = new Uint8Array([
-         kSTX,
-         0x02,
-         0x02,
-         kSTX,
-         0x63,
-         (interval << 2) | 0x00, // interval in mins is at bits 2-7
-         0
-      ]);
-      message[6] = calcCRC2(message, 4, 6);
-      return message;
+      return switchIntervalCommandFunction(interval);
    },
    resetCuffScheduler: () => {
-      const message = new Uint8Array([
-         kSTX,
-         0x02,
-         0x02,
-         kSTX,
-         0x63,
-         (0x3f << 2) | 0x00, // interval in mins is at bits 2-7
-         0
-      ]);
-      message[6] = calcCRC2(message, 4, 6);
-      return message;
+      return switchIntervalCommandFunction(0x3f);
    },
    kUseCuffOne: nanoWriteMessage([code('c'), CuffMode.UseCuff1]),
    kSwitchCuffs: nanoWriteMessage([code('c'), CuffMode.SwitchCuffs]),
@@ -131,7 +126,7 @@ export const NanoTxSampCmds = {
       0x2c
    ]),
    kEnablePhysioCal: new Uint8Array([kSTX, 0x02, 0x02, kSTX, 0x68, 0x01, 0x72]),
-   kAskPhysioCalState: new Uint8Array([kSTX, 0x01, 0x01, kSTX, 0x68, 0xa7]), // TODO: use
+   kAskPhysioCalState: new Uint8Array([kSTX, 0x01, 0x01, kSTX, 0x68, 0xa7]),
 
    kStartMeasure: nanoWriteMessage([code('e'), 0x01]),
    kStopMeasure: nanoWriteMessage([code('e'), 0x02]),
@@ -249,3 +244,101 @@ export enum NanoModes {
    Bootloader = 7,
    Error = 15
 }
+
+export const PacketLength: Record<PacketType, number> = {
+   [PacketType.Beat2BDataTransmission]: kCRClen + 15,
+   [PacketType.DataTransmission]: kCRClen + 10,
+   [PacketType.Status]: kCRClen + 16,
+   [PacketType.VersionInfo]: kCRClen + 130
+};
+
+const BloodPressureUnitsInfo = {
+   unitName: 'mmHg',
+   prefix: UnitPrefix.kNoPrefix,
+   defaultDecPlaces: kDecimalPlaces,
+   maxInPrefixedUnits: kPressureRangeMaxMmHg,
+   maxInADCValues: kPressureRangeMaxMmHg * kConversionFactor,
+   minInPrefixedUnits: 0,
+   minInADCValues: 0,
+   maxValidADCValue: kPressureRangeMaxMmHg * kConversionFactor,
+   minValidADCValue: 0
+};
+
+export const DefaultUnits: Record<NanoChannels, UnitsInfo> = {
+   [NanoChannels.kBP]: BloodPressureUnitsInfo,
+   [NanoChannels.kBPHC]: BloodPressureUnitsInfo,
+   [NanoChannels.kHGT]: BloodPressureUnitsInfo,
+   [NanoChannels.kSYS]: BloodPressureUnitsInfo,
+   [NanoChannels.kSYSHC]: BloodPressureUnitsInfo,
+   [NanoChannels.kMAP]: BloodPressureUnitsInfo,
+   [NanoChannels.kMAPHC]: BloodPressureUnitsInfo,
+   [NanoChannels.kDIA]: BloodPressureUnitsInfo,
+   [NanoChannels.kDIAHC]: BloodPressureUnitsInfo,
+
+   [NanoChannels.kHR]: {
+      unitName: 'bpm',
+      prefix: UnitPrefix.kNoPrefix,
+      defaultDecPlaces: 0,
+      maxInPrefixedUnits: kBPMRangeMax,
+      maxInADCValues: kBPMRangeMax * kConversionFactor,
+      minInPrefixedUnits: 0,
+      minInADCValues: 0,
+      maxValidADCValue: kBPMRangeMax * kConversionFactor,
+      minValidADCValue: 0
+   },
+   [NanoChannels.kIBI]: {
+      unitName: 's',
+      prefix: UnitPrefix.kMilli,
+      defaultDecPlaces: 0,
+      maxInPrefixedUnits: IBIRangeMax,
+      maxInADCValues: IBIRangeMax,
+      minInPrefixedUnits: 0,
+      minInADCValues: 0,
+      maxValidADCValue: IBIRangeMax,
+      minValidADCValue: 0
+   },
+   [NanoChannels.kActiveCuff]: {
+      unitName: 'CuffNum',
+      prefix: UnitPrefix.kNoPrefix,
+      defaultDecPlaces: 0,
+      maxInPrefixedUnits: kCuffCountRange,
+      maxInADCValues: kCuffCountRange,
+      minInPrefixedUnits: 0,
+      minInADCValues: 0,
+      maxValidADCValue: kCuffCountRange,
+      minValidADCValue: 0
+   },
+   [NanoChannels.kCuffCountdown]: {
+      unitName: 'SecondsLeft',
+      prefix: UnitPrefix.kNoPrefix,
+      defaultDecPlaces: 0,
+      maxInPrefixedUnits: kCuffCountDownRange,
+      maxInADCValues: kCuffCountDownRange,
+      minInPrefixedUnits: 0,
+      minInADCValues: 0,
+      maxValidADCValue: kCuffCountDownRange,
+      minValidADCValue: 0
+   },
+   [NanoChannels.kQualLevel]: {
+      unitName: 'QualLevel',
+      prefix: UnitPrefix.kNoPrefix,
+      defaultDecPlaces: 0,
+      maxInPrefixedUnits: kQualRange,
+      maxInADCValues: kQualRange,
+      minInPrefixedUnits: 0,
+      minInADCValues: 0,
+      maxValidADCValue: kQualRange,
+      minValidADCValue: 0
+   },
+   [NanoChannels.kAutoCalCountdown]: {
+      unitName: 'BeatsLeft',
+      prefix: UnitPrefix.kNoPrefix,
+      defaultDecPlaces: 0,
+      maxInPrefixedUnits: kBeatsRange,
+      maxInADCValues: kBeatsRange,
+      minInPrefixedUnits: 0,
+      minInADCValues: 0,
+      maxValidADCValue: kBeatsRange,
+      minValidADCValue: 0
+   }
+};

@@ -16,7 +16,7 @@ import {
 import { NanoParser } from './nanoParser';
 import { PhysicalDevice } from './physicalDevice';
 import { ProxyDevice } from './proxy';
-import { kEnableLogging } from './enableLogging';
+import { debugLog } from './enableLogging';
 import { parseAndLogHardwareInfo, parseAndLogVersionStruct } from './utils';
 import { DeviceClassBase } from '../../../public/device-class-base';
 
@@ -78,35 +78,27 @@ export class DeviceClass extends DeviceClassBase implements IDeviceClass {
       deviceConnection: DuplexDeviceConnection,
       callback: (error: Error | null, device: PhysicalDevice | null) => void
    ) {
-      if (kEnableLogging) {
-         console.log(deviceName + ' Checking');
-         console.log(deviceConnection);
-      }
-
-      const vid = deviceConnection.vendorId.toUpperCase();
-      const pid = deviceConnection.productId.toUpperCase();
+      debugLog(deviceName + ' Checking');
+      debugLog(deviceConnection);
 
       if (
-         vid !== '0403' ||
-         pid !== '6001' ||
+         deviceConnection.vendorId !== '0403' ||
+         deviceConnection.productId !== '6001' ||
          deviceConnection.manufacturer !== 'FTDI'
       ) {
-         if (kEnableLogging) console.log(deviceName + ' Rejecting');
+         debugLog(deviceName + ' Rejecting');
 
          callback(null, null); // Did not find one of our devices on this connection
          return;
       }
 
       if (deviceConnection.pnpId.includes('ADICODA')) {
-         if (kEnableLogging)
-            console.log(
-               'NIBPnano: bailing to stop clobbering CODA connection...'
-            );
+         debugLog('NIBPnano: bailing to stop clobbering CODA connection...');
          callback(null, null);
          return;
       }
 
-      if (kEnableLogging) console.log(deviceName + ' Accepting');
+      debugLog(deviceName + ' Accepting');
 
       deviceConnection.setOption({ baud_rate: 115200 });
       const devStream = new DuplexStream(deviceConnection);
@@ -144,19 +136,15 @@ export class DeviceClass extends DeviceClassBase implements IDeviceClass {
       ) => {
          switch (packetType) {
             case VersionPacketType.HardwareInfo: {
-               if (kEnableLogging) {
-                  console.log('--- HardwareInfo ---');
-               }
+               debugLog('--- HardwareInfo ---');
                hwInfo = parseAndLogHardwareInfo(newBytes);
                versionStep = 'application version';
                devStream.write(kApplicationVersionCmd);
                break;
             }
             case VersionPacketType.ApplicationVersion:
-               if (kEnableLogging) {
-                  console.log('--- ApplicationVersion ---');
-                  parseAndLogVersionStruct(newBytes);
-               }
+               debugLog('--- ApplicationVersion ---');
+               parseAndLogVersionStruct(newBytes);
 
                if (versionStep !== 'application version') {
                   // We might not have HWInfo
@@ -169,10 +157,8 @@ export class DeviceClass extends DeviceClassBase implements IDeviceClass {
                break;
 
             case VersionPacketType.BootloaderVersion:
-               if (kEnableLogging) {
-                  console.log('--- BootloaderVersion ---');
-                  parseAndLogVersionStruct(newBytes);
-               }
+               debugLog('--- BootloaderVersion ---');
+               parseAndLogVersionStruct(newBytes);
 
                if (versionStep !== 'bootloader version') {
                   // We might not have HWInfo or App Version
@@ -211,6 +197,7 @@ export class DeviceClass extends DeviceClassBase implements IDeviceClass {
             onSamplingUpdate: () => {},
             onPacket: onPacketFound,
             //This onError() handler will be replaced by the
+            //PhysicalDevice when it is created
             onError: (err: Error) => {
                global.clearInterval(versionCommandTimeout);
                global.clearTimeout(deviceTimeout);

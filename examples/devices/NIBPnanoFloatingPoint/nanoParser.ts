@@ -18,22 +18,22 @@ import {
    kDataSamplesPerStatusSample,
    kPhysiocalOffBeats,
    kBaseVersionInfo,
-   VersionPacketType
+   VersionPacketType,
+   PacketLength,
+   kCuffIsSwitching
 } from './constants';
 import { ProxyDevice } from './proxy';
 import { INIBPSettings } from './settings';
+import { CheckCRC, findVersionInfoData } from './utils';
 import {
-   CheckCRC,
-   getKeyByValue,
-   findVersionInfoData,
-   packetTypeToLength
-} from './utils';
-import {
-   nanoErrorArray,
+   NIBPErrors,
    nanoWarningsArray,
-   kManoBeDe_warn_NoPulse
+   kHandleWarningFlag,
+   WarningFlags,
+   getErrorCode,
+   NIBPErrorCodes
 } from './errorMessages';
-import { kEnableLogging } from './enableLogging';
+import { debugLog, kLogAllWarnings } from './enableLogging';
 
 enum SamplingState {
    kIdle,
@@ -70,11 +70,11 @@ export class NanoParser {
    _lastHRdataBper10min: number;
    _lastIBIdata: number;
    _lastActiveCuff: number;
-   lastCuffCountdowndataMins: number;
    _lastCuffCountdownSecs: number;
    _lastAutoCalCountdowndata: number;
 
-   cuffTimer: number;
+   lastCuffCountdownMins: number;
+   cuffStartTimeStamp: number;
 
    beat2BPacketCount: number;
 
@@ -87,7 +87,7 @@ export class NanoParser {
 
    criticalError: boolean;
    raisedErrors: number[];
-   raisedWarnings: string[];
+   raisedWarnings: number[];
    raisedWarningTimestamps: number[];
 
    lastStatusMode: NanoModes;
@@ -181,10 +181,10 @@ export class NanoParser {
       this._lastIBIdata = 0;
 
       this._lastActiveCuff = 1;
-      this.lastCuffCountdowndataMins = 0;
       this._lastCuffCountdownSecs = 0;
       this._lastAutoCalCountdowndata = 0;
       this.lastHCUStatusdata = -1;
+      this.lastCuffCountdownMins = -1;
 
       this.beat2BPacketCount = 0;
 
@@ -238,13 +238,10 @@ export class NanoParser {
             this.inStream.write(NanoTxSampCmds.switchIntervalCommand(0)); // disable
             this.inStream.write(NanoTxSampCmds.kUseCuffOne);
             this.inStream.write(NanoTxSampCmds.resetCuffScheduler());
-            this.lastCuffCountdowndataMins = -1; // force an update
             break;
 
          case CuffMode.SwitchCuffs:
             this.setCuffSwitchInterval(this.cuffSwitchingInterval);
-            this.inStream.write(NanoTxSampCmds.resetCuffScheduler());
-            this.lastCuffCountdowndataMins = -1; // force an update
             break;
 
          default:
@@ -258,6 +255,7 @@ export class NanoParser {
          NanoTxSampCmds.switchIntervalCommand(this.cuffSwitchingInterval)
       );
       this.inStream.write(NanoTxSampCmds.resetCuffScheduler());
+      this.inStream.write(NanoTxSampCmds.resetCuffScheduler());
    }
 
    setContinueOnError(enabled: boolean) {
@@ -270,6 +268,18 @@ export class NanoParser {
 
    onError(err: Error) {
       this.lastError = err.message;
+
+      if (
+         this.proxyDevice instanceof ProxyDevice &&
+         this.lastError.includes('IO Exception')
+      ) {
+         this.proxyDevice.displayError(
+            'Unexpected IO error, please check device is plugged in correctly.',
+            !this.continueOnError,
+            'Unexpected IO Error'
+         );
+      }
+
       console.error(err);
    }
 
@@ -323,9 +333,11 @@ export class NanoParser {
       this._lastDIAdata = 0;
       this._lastHRdataBper10min = 0;
       this._lastIBIdata = 0;
-      this.lastCuffCountdowndataMins = -1; // force an update
+
       this._lastCuffCountdownSecs = 0;
       this._lastAutoCalCountdowndata = 0;
+      this.cuffStartTimeStamp = 0;
+      this.lastCuffCountdownMins = -1;
 
       this._lastActiveCuff = 1; // always start on Cuff 1
 
@@ -355,7 +367,7 @@ export class NanoParser {
          this._lastHRdataBper10min = 0;
          this._lastIBIdata = 0;
          this._lastActiveCuff = 0;
-         this.lastCuffCountdowndataMins = -1;
+         this.lastCuffCountdownMins = -1;
          this._lastCuffCountdownSecs = 0;
          this._lastAutoCalCountdowndata = 0;
          return false;
@@ -427,13 +439,12 @@ export class NanoParser {
          if (nextPacketStart > itr) itr = nextPacketStart - 1;
       }
 
-      if (nextPacketStart <= this.mBuffer.length)
+      if (nextPacketStart <= this.mBuffer.length) {
          // will always be
-         this.mBuffer = this.mBuffer.slice(
-            nextPacketStart,
-            this.mBuffer.length
-         );
-      else this.mBuffer = null;
+         this.mBuffer = this.mBuffer.slice(nextPacketStart);
+      } else {
+         this.mBuffer = null;
+      }
 
       if (!this.isSampling()) return;
 
@@ -449,7 +460,7 @@ export class NanoParser {
       // we wait for some b2b packets before setting it off again
       if (
          !this.enablePhysioCal &&
-         !!this.lastPhysiocalState && // > kPhysiocalOff = 0x00
+         this.lastPhysiocalState !== PhysiocalState.kPhysiocalOff &&
          this.beat2BPacketCount >= kPhysiocalOffBeats
       ) {
          this.setAutocalibrationEnabled(false);
@@ -478,7 +489,8 @@ export class NanoParser {
 
    padDataTransmissionPacketData() {
       if (!this.proxyDevice) {
-         return; // Something has gone terribly wrong
+         debugLog('Tried to process data transmission but had no proxy device');
+         return;
       }
 
       const totalExpectedSamples =
@@ -487,10 +499,10 @@ export class NanoParser {
          1000;
 
       while (this.dataSampleSampleCount < totalExpectedSamples - 1) {
-         this.proxyDevice.outStreamBuffers[NanoChannels.kBP].writeInt(0);
-         this.proxyDevice.outStreamBuffers[NanoChannels.kBPHC].writeInt(0);
-         this.proxyDevice.outStreamBuffers[NanoChannels.kHGT].writeInt(0);
-         this.proxyDevice.outStreamBuffers[NanoChannels.kQualLevel].writeInt(0);
+         this.writeOutStream(NanoChannels.kBP, 0);
+         this.writeOutStream(NanoChannels.kBPHC, 0);
+         this.writeOutStream(NanoChannels.kHGT, 0);
+         this.writeOutStream(NanoChannels.kQualLevel, 0);
 
          ++this.dataSampleSampleCount;
          ++this.statusPadSampleCount;
@@ -507,8 +519,8 @@ export class NanoParser {
     */
    confirmPacket(buffer: Buffer, packetType: PacketType, cmdpos: number) {
       if (
-         cmdpos - kCmdBytePacketOffset < 0 ||
-         cmdpos + packetTypeToLength(packetType) > buffer.length
+         cmdpos < kCmdBytePacketOffset ||
+         cmdpos + PacketLength[packetType] > buffer.length
       )
          return false;
 
@@ -535,15 +547,13 @@ export class NanoParser {
             return false;
       }
 
-      let dataPacketCheck = true;
       for (let i = 0; i < sampCmd.length; ++i) {
          // iterate over the previous bytes to make sure it matches expected answer
-         dataPacketCheck =
-            dataPacketCheck &&
-            sampCmd[i] == buffer[cmdpos - kCmdBytePacketOffset + i];
+         if (sampCmd[i] !== buffer[cmdpos - kCmdBytePacketOffset + i])
+            return false;
       }
 
-      return dataPacketCheck;
+      return true;
    }
 
    /**
@@ -573,7 +583,7 @@ export class NanoParser {
          // move buffer ptr along but don't process it
          return (
             dcmdPos +
-            packetTypeToLength(PacketType.Beat2BDataTransmission) -
+            PacketLength[PacketType.Beat2BDataTransmission] -
             kCmdBytePacketOffset
          );
 
@@ -585,12 +595,11 @@ export class NanoParser {
          this.lastB2bTimeStamp = currentTimeStamp;
 
       if (
-         kEnableLogging &&
          this.expectedDataTransmissionTimeStamp &&
          currentTimeStamp != this.expectedDataTransmissionTimeStamp
       ) {
-         console.log('Data currentTimeStamp: ' + currentTimeStamp);
-         console.log(
+         debugLog('Data currentTimeStamp: ' + currentTimeStamp);
+         debugLog(
             'Data expectedTimeStamp: ' + this.expectedDataTransmissionTimeStamp
          );
 
@@ -604,42 +613,44 @@ export class NanoParser {
       const HGTdataDecimmHg = byteArray.readInt16LE(dcmdPos + 5);
       const qualityLevel = byteArray[dcmdPos + 9] & 0x0f;
 
-      console.log(HGTdataDecimmHg);
       // zerofies crufty pre-sampling nano-spew data at start of record
       if (BPdataDecimmHg > kPressureRangeMaxMmHg * kConversionFactor)
          BPdataDecimmHg = 0x00;
 
-      const HGTShortValue = (HGTdataDecimmHg << 16) >> 16;
-      this.HGTValuesBetweenBeat.push(HGTShortValue);
+      this.HGTValuesBetweenBeat.push(HGTdataDecimmHg);
 
-      this.proxyDevice.outStreamBuffers[NanoChannels.kBP].writeInt(
-         BPdataDecimmHg
-      );
-      this.proxyDevice.outStreamBuffers[NanoChannels.kBPHC].writeInt(
-         BPdataDecimmHg + HGTShortValue
-      );
+      this.writeOutStream(NanoChannels.kBP, BPdataDecimmHg);
+      this.writeOutStream(NanoChannels.kBPHC, BPdataDecimmHg + HGTdataDecimmHg);
 
       // These values are scaled for autoscale
-      this.proxyDevice.outStreamBuffers[NanoChannels.kHGT].writeInt(
-         HGTdataDecimmHg
-      );
-      this.proxyDevice.outStreamBuffers[NanoChannels.kQualLevel].writeInt(
-         qualityLevel
-      );
+      this.writeOutStream(NanoChannels.kHGT, HGTdataDecimmHg);
+      this.writeOutStream(NanoChannels.kQualLevel, qualityLevel);
 
       ++this.beat2BPadSampleCount;
       ++this.statusPadSampleCount;
       ++this.dataSampleSampleCount;
 
-      if (!this.dataPadTimerms)
+      if (!this.dataPadTimerms) {
          // startTickms effectively
          this.dataPadTimerms = performance.now();
+      }
 
       return (
          dcmdPos +
-         packetTypeToLength(PacketType.DataTransmission) -
+         PacketLength[PacketType.DataTransmission] -
          kCmdBytePacketOffset
       );
+   }
+
+   /**
+    *
+    * Write to the outstream buffers to get data into Lightning
+    *
+    * @param channel
+    * @param data
+    */
+   writeOutStream(channel: NanoChannels, data: number) {
+      this.proxyDevice?.outStreamBuffers[channel]?.writeValue?.(data);
    }
 
    /**
@@ -653,7 +664,7 @@ export class NanoParser {
          // move buffer ptr along but don't process it
          return (
             bcmdPos +
-            packetTypeToLength(PacketType.Beat2BDataTransmission) -
+            PacketLength[PacketType.Beat2BDataTransmission] -
             kCmdBytePacketOffset
          );
 
@@ -664,34 +675,18 @@ export class NanoParser {
 
       const B2bTimestamp = byteArray.readUInt16LE(bcmdPos + 1);
 
-      if (B2bTimestamp < this.lastB2bTimeStamp) this.lastB2bTimeStamp -= 65535; // account for wrapping (2^16 - 1)
+      if (B2bTimestamp < this.lastB2bTimeStamp) this.lastB2bTimeStamp -= 65536; // account for wrapping (2^16)
 
       // retroactively fill in beat2Beat data with latest data
       while (this.lastB2bTimeStamp < B2bTimestamp) {
-         this.proxyDevice.outStreamBuffers[NanoChannels.kSYS].writeInt(
-            this.lastSysDataScaled
-         );
-         this.proxyDevice.outStreamBuffers[NanoChannels.kSYSHC].writeInt(
-            this.hcLastSysDataScaled
-         );
-         this.proxyDevice.outStreamBuffers[NanoChannels.kMAP].writeInt(
-            this.lastMAPDataScaled
-         );
-         this.proxyDevice.outStreamBuffers[NanoChannels.kMAPHC].writeInt(
-            this.hcLastMAPDataScaled
-         );
-         this.proxyDevice.outStreamBuffers[NanoChannels.kDIA].writeInt(
-            this.lastDiaDataScaled
-         );
-         this.proxyDevice.outStreamBuffers[NanoChannels.kDIAHC].writeInt(
-            this.hcLastDiaDataScaled
-         );
-         this.proxyDevice.outStreamBuffers[NanoChannels.kHR].writeInt(
-            this.lastHRDataBper10minScaled
-         );
-         this.proxyDevice.outStreamBuffers[NanoChannels.kIBI].writeInt(
-            this.lastIBIDataScaled
-         );
+         this.writeOutStream(NanoChannels.kSYS, this.lastSysDataScaled);
+         this.writeOutStream(NanoChannels.kSYSHC, this.hcLastSysDataScaled);
+         this.writeOutStream(NanoChannels.kMAP, this.lastMAPDataScaled);
+         this.writeOutStream(NanoChannels.kMAPHC, this.hcLastMAPDataScaled);
+         this.writeOutStream(NanoChannels.kDIA, this.lastDiaDataScaled);
+         this.writeOutStream(NanoChannels.kDIAHC, this.hcLastDiaDataScaled);
+         this.writeOutStream(NanoChannels.kHR, this.lastHRDataBper10minScaled);
+         this.writeOutStream(NanoChannels.kIBI, this.lastIBIDataScaled);
 
          ++this.lastB2bTimeStamp;
          --this.beat2BPadSampleCount; // used for continueOnError
@@ -712,7 +707,7 @@ export class NanoParser {
 
       return (
          bcmdPos +
-         packetTypeToLength(PacketType.Beat2BDataTransmission) -
+         PacketLength[PacketType.Beat2BDataTransmission] -
          kCmdBytePacketOffset
       );
    }
@@ -732,25 +727,22 @@ export class NanoParser {
 
       if (!this.isSampling() || this.criticalError)
          return (
-            scmdPos +
-            packetTypeToLength(PacketType.Status) -
-            kCmdBytePacketOffset
+            scmdPos + PacketLength[PacketType.Status] - kCmdBytePacketOffset
          );
 
       let currentTimeStamp = byteArray.readUInt16LE(scmdPos + 1);
 
       if (
-         kEnableLogging &&
          this.expectedStatusTimeStamp &&
          currentTimeStamp != this.expectedStatusTimeStamp
       ) {
-         console.log('status currentTimeStamp: ' + currentTimeStamp);
-         console.log(
-            'status expectedTimeStamp: ' + this.expectedStatusTimeStamp
-         );
+         debugLog('status currentTimeStamp: ' + currentTimeStamp);
+         debugLog('status expectedTimeStamp: ' + this.expectedStatusTimeStamp);
 
-         if (currentTimeStamp >= 2 ** 16)
+         if (currentTimeStamp >= 2 ** 16) {
+            debugLog('This seesm impossible given a uint16');
             currentTimeStamp = -kDataSamplesPerStatusSample;
+         }
 
          this.expectedStatusTimeStamp =
             currentTimeStamp + kDataSamplesPerStatusSample;
@@ -761,50 +753,62 @@ export class NanoParser {
       if (!!activeCuff && this._lastActiveCuff != activeCuff) {
          this._lastActiveCuff = activeCuff;
 
-         if (this.proxyDevice && this.proxyDevice instanceof ProxyDevice)
+         if (this.proxyDevice instanceof ProxyDevice)
             this.proxyDevice.addAnnotation(
                'Switching to Cuff ' + this._lastActiveCuff
             );
       }
 
-      let cuffCountdownMins = byteArray[scmdPos + 10] >> 2;
+      const cuffCountdownMins = byteArray[scmdPos + 10] >> 2;
       this._lastAutoCalCountdowndata = this.enablePhysioCal
          ? byteArray[scmdPos + 12]
          : 0;
 
-      // 0x00 = Automatic cuff control is disabled
-      // 0x3E = 62 = Switching (or enabling) cuff now
-      if (cuffCountdownMins > 61) cuffCountdownMins = 0;
-
-      this._lastCuffCountdownSecs = 0;
-
-      if (cuffCountdownMins) {
-         if (this.lastCuffCountdowndataMins != cuffCountdownMins) {
-            this.lastCuffCountdowndataMins = cuffCountdownMins;
-            this._lastCuffCountdownSecs = cuffCountdownMins * 60;
-            this.cuffTimer = performance.now() / 1000;
-         } else {
-            const nowSec = performance.now() / 1000;
-            this._lastCuffCountdownSecs =
-               cuffCountdownMins * 60 - (nowSec - this.cuffTimer);
-         }
+      if (this.lastCuffCountdownMins === -1) {
+         this.cuffStartTimeStamp = performance.now() / 1000;
       }
 
-      this.proxyDevice.outStreamBuffers[NanoChannels.kActiveCuff].writeInt(
-         this.lastActiveCuffScaled
-      );
-      this.proxyDevice.outStreamBuffers[NanoChannels.kCuffCountdown].writeInt(
+      // Reset cached countdown
+      this._lastCuffCountdownSecs = 0;
+
+      // 0x00 = Automatic cuff control is disabled
+      // 0x3E = 62 = Switching (or enabling) cuff now
+      if (cuffCountdownMins === kCuffIsSwitching) {
+         if (this.lastCuffCountdownMins !== kCuffIsSwitching) {
+            this.cuffStartTimeStamp = performance.now() / 1000;
+            this.lastCuffCountdownMins = cuffCountdownMins;
+         }
+      } else if (cuffCountdownMins > 0) {
+         const nowSec = performance.now() / 1000;
+
+         if (this.lastCuffCountdownMins === kCuffIsSwitching) {
+            this.lastCuffCountdownMins = cuffCountdownMins;
+         }
+
+         // Whenever the minutes change during a countdown
+         // reset the seconds.
+         if (this.lastCuffCountdownMins !== cuffCountdownMins) {
+            this.lastCuffCountdownMins = cuffCountdownMins;
+            this.cuffStartTimeStamp = nowSec;
+         }
+
+         this._lastCuffCountdownSecs =
+            cuffCountdownMins * 60 - (nowSec - this.cuffStartTimeStamp);
+      }
+
+      this.writeOutStream(NanoChannels.kActiveCuff, this.lastActiveCuffScaled);
+      this.writeOutStream(
+         NanoChannels.kCuffCountdown,
          this.lastCuffCountdownSecsScaled
       );
-      this.proxyDevice.outStreamBuffers[
-         NanoChannels.kAutoCalCountdown
-      ].writeInt(this.lastAutoCalCountdownDataScaled);
+      this.writeOutStream(
+         NanoChannels.kAutoCalCountdown,
+         this.lastAutoCalCountdownDataScaled
+      );
 
       --this.statusPadSampleCount;
 
-      return (
-         scmdPos + packetTypeToLength(PacketType.Status) - kCmdBytePacketOffset
-      );
+      return scmdPos + PacketLength[PacketType.Status] - kCmdBytePacketOffset;
    }
 
    /**
@@ -844,10 +848,10 @@ export class NanoParser {
                break;
 
             default:
-               console.log('Not a version packet');
+               debugLog('Not a version packet');
                return (
                   pos +
-                  packetTypeToLength(PacketType.VersionInfo) -
+                  PacketLength[PacketType.VersionInfo] -
                   kCmdBytePacketOffset
                );
          }
@@ -861,13 +865,11 @@ export class NanoParser {
             // Send back to device class to create Physical Device
             dataSink.onPacket(returnPacketType, versionBuffer);
          } else {
-            console.log('Not a version packet');
+            debugLog('Not a version packet');
          }
       }
 
-      return (
-         pos + packetTypeToLength(PacketType.VersionInfo) - kCmdBytePacketOffset
-      );
+      return pos + PacketLength[PacketType.VersionInfo] - kCmdBytePacketOffset;
    }
 
    padBeatToBeatDataTransmissionPacketData() {
@@ -875,30 +877,14 @@ export class NanoParser {
 
       // this is used only when continue on error is true
       while (this.beat2BPadSampleCount > 0) {
-         this.proxyDevice.outStreamBuffers[NanoChannels.kSYS].writeInt(
-            this.lastSysDataScaled
-         );
-         this.proxyDevice.outStreamBuffers[NanoChannels.kSYSHC].writeInt(
-            this.hcLastSysDataScaled
-         );
-         this.proxyDevice.outStreamBuffers[NanoChannels.kMAP].writeInt(
-            this.lastMAPDataScaled
-         );
-         this.proxyDevice.outStreamBuffers[NanoChannels.kMAPHC].writeInt(
-            this.hcLastMAPDataScaled
-         );
-         this.proxyDevice.outStreamBuffers[NanoChannels.kDIA].writeInt(
-            this.lastDiaDataScaled
-         );
-         this.proxyDevice.outStreamBuffers[NanoChannels.kDIAHC].writeInt(
-            this.hcLastDiaDataScaled
-         );
-         this.proxyDevice.outStreamBuffers[NanoChannels.kHR].writeInt(
-            this.lastHRDataBper10minScaled
-         );
-         this.proxyDevice.outStreamBuffers[NanoChannels.kIBI].writeInt(
-            this.lastIBIDataScaled
-         );
+         this.writeOutStream(NanoChannels.kSYS, this.lastSysDataScaled);
+         this.writeOutStream(NanoChannels.kSYSHC, this.hcLastSysDataScaled);
+         this.writeOutStream(NanoChannels.kMAP, this.lastMAPDataScaled);
+         this.writeOutStream(NanoChannels.kMAPHC, this.hcLastMAPDataScaled);
+         this.writeOutStream(NanoChannels.kDIA, this.lastDiaDataScaled);
+         this.writeOutStream(NanoChannels.kDIAHC, this.hcLastDiaDataScaled);
+         this.writeOutStream(NanoChannels.kHR, this.lastHRDataBper10minScaled);
+         this.writeOutStream(NanoChannels.kIBI, this.lastIBIDataScaled);
 
          --this.beat2BPadSampleCount;
       }
@@ -909,32 +895,29 @@ export class NanoParser {
 
       // Upsample status data to pressure data
       while (this.statusPadSampleCount > 0) {
-         this.proxyDevice.outStreamBuffers[NanoChannels.kActiveCuff].writeInt(
+         this.writeOutStream(
+            NanoChannels.kActiveCuff,
             this.lastActiveCuffScaled
          );
-         this.proxyDevice.outStreamBuffers[
-            NanoChannels.kCuffCountdown
-         ].writeInt(this.lastCuffCountdownSecsScaled);
-         this.proxyDevice.outStreamBuffers[
-            NanoChannels.kAutoCalCountdown
-         ].writeInt(this.lastAutoCalCountdownDataScaled);
+         this.writeOutStream(
+            NanoChannels.kCuffCountdown,
+            this.lastCuffCountdownSecsScaled
+         );
+
+         this.writeOutStream(
+            NanoChannels.kAutoCalCountdown,
+            this.lastAutoCalCountdownDataScaled
+         );
 
          --this.statusPadSampleCount;
       }
    }
 
    calcHeightAverage(): number {
-      let counter = 0;
-      let sum = 0;
-
-      this.HGTValuesBetweenBeat.forEach((value) => {
-         sum += value;
-         ++counter;
-      });
-
-      if (counter === 0) return 0;
-
-      return sum / counter;
+      return !this.HGTValuesBetweenBeat.length
+         ? 0
+         : this.HGTValuesBetweenBeat.reduce((sum, val) => sum + val) /
+              this.HGTValuesBetweenBeat.length;
    }
 
    handleStatusFlags(byteArray: Buffer, scmdPos: number) {
@@ -951,7 +934,6 @@ export class NanoParser {
          if (
             this.isSampling() &&
             this.enablePhysioCal &&
-            this.proxyDevice &&
             this.proxyDevice instanceof ProxyDevice
          ) {
             if (
@@ -985,7 +967,6 @@ export class NanoParser {
       if (
          this.lastHCUStatusdata !== NanoHCUState.kHCUZeroed &&
          !this.haveWarnedHCUNotZeroed &&
-         this.proxyDevice &&
          this.proxyDevice instanceof ProxyDevice
       ) {
          this.haveWarnedHCUNotZeroed = true;
@@ -995,31 +976,33 @@ export class NanoParser {
       let errorStr = '';
 
       if (this.lastStatusError != 0) {
-         if (this.lastStatusError !== 43 && this.lastStatusError !== 44) {
+         const lastErrorCode = getErrorCode(this.lastStatusError);
+         if (
+            this.lastStatusError !==
+               NIBPErrorCodes.HcuContr_erro_hcuOffsetToBig &&
+            this.lastStatusError !== NIBPErrorCodes.HcuContr_erro_NotAllowed
+         ) {
             // HCU zeroing related, not actual errors
-            if (this.proxyDevice && this.proxyDevice instanceof ProxyDevice) {
+            if (this.proxyDevice instanceof ProxyDevice) {
                if (!this.raisedErrors.includes(this.lastStatusError)) {
                   this.proxyDevice.displayError(
-                     nanoErrorArray[this.lastStatusError][1],
+                     NIBPErrors[lastErrorCode],
                      !this.continueOnError,
-                     nanoErrorArray[this.lastStatusError][0]
+                     NIBPErrorCodes[lastErrorCode]
                   );
 
                   this.raisedErrors.push(this.lastStatusError);
                }
 
-               if (kEnableLogging)
-                  console.error(
-                     this.deviceName +
-                        ' - ' +
-                        nanoErrorArray[this.lastStatusError][1]
-                  );
+               console.error(
+                  this.deviceName + ' - ' + NIBPErrors[lastErrorCode]
+               );
             }
 
             this.criticalError = true;
          }
 
-         errorStr = nanoErrorArray[this.lastStatusError][1];
+         errorStr = NIBPErrors[lastErrorCode];
       }
 
       if (
@@ -1032,61 +1015,53 @@ export class NanoParser {
       }
 
       if (this.lastStatusWarning != 0) {
-         for (const nanoWarningCode in nanoWarningsArray) {
-            if ((this.lastStatusWarning & parseInt(nanoWarningCode, 10)) != 0) {
-               if (!this.raisedWarnings.includes(nanoWarningCode)) {
-                  // TODO: remove this
+         for (const nanoWarning of nanoWarningsArray) {
+            if (
+               nanoWarning.flag & kHandleWarningFlag &&
+               nanoWarning.flag & this.lastStatusWarning
+            ) {
+               if (!this.raisedWarnings.includes(nanoWarning.flag)) {
                   // promote this particular warning to an error because of it's severity
-                  if (
-                     nanoWarningCode ==
-                     getKeyByValue(nanoWarningsArray, 'ManoBeDe_warn_NoPulse')
-                  ) {
-                     if (
-                        this.proxyDevice &&
-                        this.proxyDevice instanceof ProxyDevice
-                     ) {
-                        if (
-                           !this.raisedErrors.includes(kManoBeDe_warn_NoPulse)
-                        ) {
-                           this.proxyDevice.displayError(
-                              nanoWarningsArray[nanoWarningCode],
-                              !this.continueOnError,
-                              nanoWarningCode
-                           );
-
-                           this.raisedErrors.push(kManoBeDe_warn_NoPulse);
-                        }
-                     }
-
+                  if (nanoWarning.flag == WarningFlags.kManoBeDe_warn_NoPulse) {
                      // this is an interesting one, the pump appears to keep working after this warning
                      // has occured however it's hard to test as we could only get this to occur with
                      // have a whiteboard marker positioned correctly, TODO: test if it is actually recoverable...
                      // need 2 cuffs, and to switch to cuff 2 with a real finger in it after cuff 1 runs into this issue
                      this.criticalError = true;
-                     errorStr = nanoWarningsArray[nanoWarningCode];
+                     errorStr = nanoWarning.message;
+
+                     if (this.proxyDevice instanceof ProxyDevice) {
+                        if (!this.raisedErrors.includes(nanoWarning.flag)) {
+                           this.proxyDevice.displayError(
+                              nanoWarning.message,
+                              !this.continueOnError,
+                              nanoWarning.flag.toString()
+                           );
+                           this.raisedErrors.push(nanoWarning.flag);
+
+                           console.error(
+                              this.deviceName + ' - ' + nanoWarning.message
+                           );
+                        }
+                     }
                   } else {
                      if (
-                        this.proxyDevice &&
-                        this.proxyDevice instanceof ProxyDevice
+                        this.proxyDevice instanceof ProxyDevice &&
+                        !this.criticalError // no point annotating errorenous warnings
                      ) {
                         this.proxyDevice.displayWarn(
-                           nanoWarningsArray[nanoWarningCode],
-                           nanoWarningCode,
+                           nanoWarning.message,
+                           nanoWarning.flag.toString(),
                            kDisplayNanoWarnings
                         );
                      }
                   }
-
-                  this.raisedWarnings.push(nanoWarningCode);
+                  this.raisedWarnings.push(nanoWarning.flag);
                   this.raisedWarningTimestamps.push(performance.now());
                }
 
-               if (kEnableLogging) {
-                  console.warn(
-                     this.deviceName +
-                        ' - ' +
-                        nanoWarningsArray[nanoWarningCode]
-                  );
+               if (kLogAllWarnings) {
+                  console.warn(this.deviceName + ' - ' + nanoWarning.message);
                }
             }
          }
@@ -1094,11 +1069,10 @@ export class NanoParser {
 
       // remove old warnings so they can be annotated again if they are relevant in future
       if (
-         !!this.raisedWarnings.length &&
+         this.raisedWarnings.length &&
          performance.now() - this.raisedWarningTimestamps[0] >=
             kWarningAnnotationTimeoutms
       ) {
-         // TODO: I want to use an iterator but javascript...cbf
          if (this.raisedWarnings.length > 1) {
             this.raisedWarnings = this.raisedWarnings.slice(
                1,
@@ -1148,15 +1122,18 @@ export class NanoParser {
 
       // Setting correct string value to hcuStatus.
       // It is displayed in the message under the HCU button.
-      if (this.lastStatusError === 43 || this.lastStatusError === 44)
-         hcuStatus = nanoErrorArray[this.lastStatusError][1];
-
+      if (
+         this.lastStatusError === NIBPErrorCodes.HcuContr_erro_hcuOffsetToBig ||
+         this.lastStatusError === NIBPErrorCodes.HcuContr_erro_NotAllowed
+      ) {
+         const lastErrorCode = getErrorCode(this.lastStatusError);
+         hcuStatus = NIBPErrors[lastErrorCode];
+      }
       // Sending HCU status back to UI
       if (this.lastHCUStatusdata !== NanoHCUState.kHCUZeroingNow) {
          // Addding some timeout to be sure we catched last command response
          setTimeout(() => {
             if (
-               this.proxyDevice &&
                this.proxyDevice instanceof ProxyDevice &&
                this.proxyDevice.hcuZeroCallback
             ) {
