@@ -1,22 +1,22 @@
 {
-  "name": "lightningdeviceapi",
-  "version": "0.1.5",
-  "description": "API for connecting data acquisition hardware to Lightning",
-  "main": "index.js",
-  "directories": {
-    "example": "examples"
-  },
-  "scripts": {
-    "watch": "node scripts/devsync"
-  },
-  "author": "dn.lightning@adinstruments.com",
-  "license": "ISC",
-  "devDependencies": {
-    "@types/node": "^12.12.17",
-    "@typescript-eslint/eslint-plugin": "^3.3.0",
-    "@typescript-eslint/parser": "^3.3.0",
-    "cpx": "^1.5.0",
-    "eslint": "^6.5.1",
-    "typescript": "^3.7.3"
-  }
+   "name": "lightningdeviceapi",
+   "version": "0.1.5",
+   "description": "API for connecting data acquisition hardware to Lightning",
+   "main": "index.js",
+   "directories": {
+      "example": "examples"
+   },
+   "scripts": {
+      "watch": "node scripts/devsync"
+   },
+   "author": "dn.lightning@adinstruments.com",
+   "license": "ISC",
+   "devDependencies": {
+      "@types/node": "^12.12.17",
+      "@typescript-eslint/eslint-plugin": "^5.10.1",
+      "@typescript-eslint/parser": "^5.10.1",
+      "cpx": "^1.5.0",
+      "eslint": "^6.5.1",
+      "typescript": "^4.4.2"
+   }
 }

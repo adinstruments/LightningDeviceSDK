@@ -157,7 +157,7 @@ export class DeviceClass extends DeviceClassBase implements IDeviceClass {
             let versionInfo;
             try {
                versionInfo = JSON.parse(versionInfoJSON);
-            } catch (err) {
+            } catch (err: any) {
                console.warn(
                   'JSON error when parsing version information: ',
                   versionInfoJSON,
