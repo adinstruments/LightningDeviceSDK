@@ -39,6 +39,7 @@ import {
    UnitsInfo,
    UnitPrefix,
    IDuplexStream,
+   IDataSink,
    IDeviceClass,
    DeviceEvent,
    OpenPhysicalDevice,
@@ -398,7 +399,14 @@ class ParserWithSettings extends Parser {
 
    constructor(public inStream: IDuplexStream, nADCChannels: number) {
       super(inStream, nADCChannels);
-      this.samplesPerSec = kDefaultSamplesPerSec;
+      this.samplesPerSec = 0;
+   }
+
+   setProxyDevice(proxyDevice: IDataSink | null) {
+      //Reset this cached state so it get sent to the HW when needed
+      this.samplesPerSec = 0;
+
+      super.setProxyDevice(proxyDevice);
    }
 
    setSamplesPerSec(samplesPerSec: number): number {

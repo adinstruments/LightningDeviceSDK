@@ -369,7 +369,7 @@ export type UIAreaLayoutTypeApi =
 
 export type StreamDescriptor = {
    deviceManager: IDeviceManagerApi;
-   deviceIndex: number;
+   deviceId: DeviceProxyId;
    streamIndex: number;
 };
 

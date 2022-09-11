@@ -6,6 +6,20 @@ export function prefixedUnitChar(prefix: UnitPrefix) {
 }
 
 export class UnitsInfoImpl implements UnitsInfo {
+   public static createFromUnitsInfo(unitsInfo: UnitsInfo) {
+      return new UnitsInfoImpl(
+         unitsInfo.unitName,
+         unitsInfo.prefix,
+         unitsInfo.defaultDecPlaces,
+         unitsInfo.maxInPrefixedUnits,
+         unitsInfo.maxInADCValues,
+         unitsInfo.minInPrefixedUnits,
+         unitsInfo.minInADCValues,
+         unitsInfo.maxValidADCValue,
+         unitsInfo.minValidADCValue
+      );
+   }
+
    constructor(
       public unitName: string,
       public prefix: UnitPrefix,

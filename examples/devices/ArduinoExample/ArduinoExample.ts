@@ -39,6 +39,7 @@ import {
    UnitsInfo,
    UnitPrefix,
    IDuplexStream,
+   IDataSink,
    IDeviceClass,
    DeviceEvent,
    OpenPhysicalDevice,
@@ -418,7 +419,14 @@ class ParserWithSettings extends Parser {
 
    constructor(public inStream: IDuplexStream, nADCChannels: number) {
       super(inStream, nADCChannels);
-      this.samplesPerSec = kDefaultSamplesPerSec;
+      this.samplesPerSec = 0;
+   }
+
+   setProxyDevice(proxyDevice: IDataSink | null) {
+      //Reset this cached state so it get sent to the HW when needed
+      this.samplesPerSec = 0;
+
+      super.setProxyDevice(proxyDevice);
    }
 
    setSamplesPerSec(samplesPerSec: number): number {
@@ -1171,11 +1179,11 @@ export class DeviceClass extends DeviceClassBase implements IDeviceClass {
       const vid = deviceConnection.vendorId.toUpperCase();
       const pid = deviceConnection.productId.toUpperCase();
       let deviceName = '';
-      if (vid === '2341' && pid === '003E') deviceName = 'Arduino Due';
+      //if (vid === '2341' && pid === '003E') deviceName = 'Arduino Due';
       //Due Native port 003E
       // else if(vid === '2341' && pid === '003D')
       //    deviceName = 'Due Programming port';  //not recommended!
-      else if (vid === '239A' && pid === '801B')
+      if (vid === '239A' && pid === '801B')
          deviceName = 'ADAFruit Feather M0 Express';
       else if (vid === '239A' && pid === '8022')
          deviceName = 'ADAFruit Feather M4';
@@ -1199,13 +1207,6 @@ export class DeviceClass extends DeviceClassBase implements IDeviceClass {
       //could be expanded into multiple bytes, so we use 'binary' instead.
       devStream.setDefaultEncoding('binary');
 
-      // connect error handler
-      devStream.on('error', (err: Error) => {
-         console.warn(err); // errors include timeouts
-         devStream.destroy(); // stop 'data' and 'error' callbacks
-         callback(err, null);
-      });
-
       const deviceClass = this;
       let resultStr = '';
 
@@ -1219,8 +1220,18 @@ export class DeviceClass extends DeviceClassBase implements IDeviceClass {
          callback(err, null);
       }, kArduinoRebootTimems + kTimeoutms);
 
+      // connect error handler
+      devStream.on('error', (err: Error) => {
+         clearTimeout(deviceVersionTimeout);
+         console.warn(err); // errors include timeouts
+         devStream.destroy(); // stop 'data' and 'error' callbacks
+         callback(err, null);
+      });
+
       // connect data handler
       devStream.on('data', (newBytes: Buffer) => {
+         clearTimeout(deviceVersionTimeout); //we got a response
+
          const newStr = newBytes.toString();
          resultStr += newStr;
          // See if we got '$$$'
@@ -1232,47 +1243,31 @@ export class DeviceClass extends DeviceClassBase implements IDeviceClass {
             if (startPos < 0) {
                callback(null, null); //Device not found
             }
-            const versionInfoJSON = resultStr.slice(startPos, endPos);
-            const versionInfo = JSON.parse(versionInfoJSON);
-            if (
-               !(
-                  versionInfo.deviceClass &&
-                  versionInfo.deviceClass === this.getDeviceClassName()
-               )
-            ) {
+            let versionInfo = undefined;
+            try {
+               const versionInfoJSON = resultStr.slice(startPos, endPos);
+               versionInfo = JSON.parse(versionInfoJSON);
+               if (
+                  !(
+                     versionInfo.deviceClass &&
+                     versionInfo.deviceClass === this.getDeviceClassName()
+                  )
+               ) {
+                  callback(null, null); //Device not found
+               }
+               // We found an Arduino Example device
+
+               const physicalDevice = new PhysicalDevice(
+                  deviceClass,
+                  devStream,
+                  friendlyName,
+                  versionInfo
+               );
+
+               callback(null, physicalDevice);
+            } catch (err) {
                callback(null, null); //Device not found
             }
-            // We found an Arduino Example device
-            clearTimeout(deviceVersionTimeout);
-
-            const physicalDevice = new PhysicalDevice(
-               deviceClass,
-               devStream,
-               friendlyName,
-               versionInfo
-            );
-
-            callback(null, physicalDevice);
-
-            // if (startPos >= 0) {
-            //    const versionInfoJSON = resultStr.slice(startPos, endPos);
-            //    const versionInfo = JSON.parse(versionInfoJSON);
-
-            //    // We found an ArduinoRT device
-            //    clearTimeout(deviceVersionTimeout);
-
-            //    //const versionInfo = resultStr.slice(startPos, endPos);
-            //    const physicalDevice = new PhysicalDevice(
-            //       deviceClass,
-            //       devStream,
-            //       friendlyName,
-            //       versionInfo
-            //    );
-            //    //TODO: serial number should come from the firmware JSON version info!
-            //    physicalDevice.serialNumber = connectionName;
-
-            //    callback(null, physicalDevice);
-            // }
          }
       });
 

@@ -1,15 +1,14 @@
 # LightningDeviceSDK Overview
+
 **\*\*The LightningDeviceSDK is currently under development and is subject to change.\*\***
 
 ## LabChart Lightning Device Plugins
 
-A Lightning device plugin can be defined via a single Typescript (.ts) file. If you have not yet set up your development environment consider reading the [readme](README.md) and [setup](SETUP.md) documentation. 
+A Lightning device plugin can be defined via a single Typescript (.ts) file. If you have not yet set up your development environment consider reading the [readme](README.md) and [setup](SETUP.md) documentation.
 
 In this document we give a brief introduction. A more detailed explanation exists in [this infographic](SDK_infographics_v2.01.pdf) document.
 
 You can also find complete plugin script examples in [.\examples\devices](.\examples\devices).
-
-
 
 <br/>
 
@@ -23,7 +22,6 @@ Your plugin file must contain three essential building blocks:
 
 The required interface for these classes can be found in [.\public\device-api.ts](public\device-api.ts).
 
-
 <br/>
 
 ## Device class (`device-api.ts : IDeviceClass`)
@@ -33,7 +31,6 @@ An object representing a closely-related class or catagory of devices that are L
 As an example, consider the ADInstruments PowerLab hardware range. A single PowerLab device class provides support for multiple PowerLab models (e.g. PowerLab 8/35 with 8 analog inputs vs PowerLab 2/26T supporting only 2 analog inputs) with varying capabilities. Using a single PowerLab class to represent multiple PowerLab models gives users greater flexibility. For example, it allows a sampling setup created with a PowerLab 8/35 to be used by another user on a different computer who only has access to a PowerLab 2/26T.
 
 In the setup documentation [setup](SETUP.md) you saw a very basic example:
-
 
 ```ts
 export class DeviceClass {
@@ -50,14 +47,14 @@ module.exports = {
 }
 ```
 
-By exporting the getDeviceClasses() method, this `DeviceClass` is now registered with Lightning. When Lightning launches, this and all other registered `DeviceClass` objects are compared to the any detected hardware. 
+By exporting the getDeviceClasses() method, this `DeviceClass` is now registered with Lightning. When Lightning launches, this and all other registered `DeviceClass` objects are compared to the any detected hardware.
 
-To make this comparison your `DeviceClass` class must contain a `checkDevicesIsPresent()` method. Lightning calls this method and passes it a `deviceConnection` object. That object will contain device information such as a vendor ID or a product ID. 
+To make this comparison your `DeviceClass` class must contain a `checkDevicesIsPresent()` method. Lightning calls this method and passes it a `deviceConnection` object. That object will contain device information such as a vendor ID or a product ID.
 
 ```ts
 
 // now implementing the API
-export class DeviceClass implements IDeviceClass { 
+export class DeviceClass implements IDeviceClass {
     // ...
 
     checkDeviceIsPresent(
@@ -70,7 +67,7 @@ export class DeviceClass implements IDeviceClass {
         let deviceName = '';
         if (vid === '16C0' && pid === '0483') {
             deviceName = 'YourDeviceName';
-        } 
+        }
 
         // now make a PhysicalDevice object - more on this below
 ```
@@ -82,7 +79,6 @@ If you were to log out the `deviceConnection` object in the dev tools then you w
 ![device connection](images/deviceConnection.png)
 
 Here we can see the vendorID and productID.
-
 
 <br/>
 
@@ -106,9 +102,8 @@ Physical device objects are only destroyed once the application closes.
 
 Other than access to constants, you should not often need to access the `physicalDevice`. Instead, the `proxyDevice` will handle sampling settings and interface with the `physicalDevice`. `proxyDevice` is discussed in the next section.
 
-A simple stand alone `physicalDevice` example exists for Arduino devices in 
+A simple stand alone `physicalDevice` example exists for Arduino devices in
 [public\arduino-physical-device.ts](public\arduino-physical-device.ts).
-
 
 <br/>
 
@@ -127,7 +122,7 @@ It is within `proxyDevice` that important sampling and hardware updates must be 
 
 `proxyDevice` objects also have access to sampled data for their associated recording. As such, they may also need to access a parser.
 
-One complete but simple packet parser example exists at [public\packet-parser.ts](public\packet-parser.ts). Incoming bytes are passed to the `onData()` method. That method then calls a method to process the buffer, which acts as a finite state machine. 
+One complete but simple packet parser example exists at [public\packet-parser.ts](public\packet-parser.ts). Incoming bytes are passed to the `onData()` method. That method then calls a method to process the buffer, which acts as a finite state machine.
 
 The way you process the buffer will depend upon the characteristics of your data packet. For example, in (examples\devices\MentalabExplore\parser.ts)[examples\devices\MentalabExplore\parser.ts] a new packet code is found at the end of the packet.
 
@@ -152,9 +147,53 @@ const kUnitsForGain = new UnitsInfoImpl(
    0x7fff * 1.5, //maxValidADCValue
    -0x7fff * 1.5 //minValidADCValue
 );
-
 ```
 
+### Data Formats
+
+A number of data formats are supported in Lightning but by default it will use a 16-bit integer format. This can be changed by specifying a different format in the DeviceStreamConfigration object for stream. If your device doesn't return 16-bit integers then it also needs to specified when creating StreamRingBufferImpl's in prepareForSampling, this is passed back for you by Lightning.
+
+See NIBPnanoFloatingPoint for a complete example. In this example, values from the device are a scaled prefixed integer value e.g. 1/10 mmHg vs mmHg.
+
+Usage example:
+
+```ts
+class DeviceStreamConfiguration implements IDeviceStreamConfiguration {
+   unitsInfo: UnitsInfo;
+   dataFormat: BlockDataFormat;
+   constructor(posFullScaleV: number) {
+      this.unitsInfo = unitsFromPosFullScale(posFullScaleV);
+      this.dataFormat = BlockDataFormat.k16BitBlockDataFormat;
+   }
+}
+```
+
+```ts
+
+prepareForSampling(
+   bufferSizeInSecs: number,
+   streamDataFormats: BlockDataFormat[]
+) {
+
+// Other prepare code
+
+// Buffer creattion
+this.outStreamBuffers.push(
+   new StreamRingBufferImpl(index, nSamples, streamDataFormats[index])
+);
+
+}
+```
+
+Other options are:
+
+```ts
+enum BlockDataFormat {
+   k12BitBlockDataFormat
+   k16BitBlockDataFormat
+   kFloatBlockDataFormat
+}
+```
 
 <br/>
 
@@ -162,9 +201,7 @@ const kUnitsForGain = new UnitsInfoImpl(
 
 To better understand the role of the various objects in the plugin implementation, consider the following scenarios:
 
-
 <br/>
-
 
 #### Scenario 1 - Attach a device and launch LabChart Lightning
 
@@ -172,12 +209,9 @@ To better understand the role of the various objects in the plugin implementatio
 2. Shortly after, Lightning initiates a device scan process. For each device returned by the operating system, `checkDeviceIsPresent(deviceConnection, callback)` is called on the DeviceClass implementation. If the vendor, product and manufacturer information for the connection match the expected values for the target device a new Physical device object is instantiated and returned to LabChart Lightning via callback.
 3. If a device is found, a `deviceProxy` for the found physical device will be created for that recording. Clicking on the Devices button at the top of the Chart View shows the connected device and a summary in a popup, as in the image below:
 
-
 ![Confirming a connected device](images/connected-device.png)
 
-
 <br/>
-
 
 #### Scenario 2 - User adjusts the device's sampling rate
 
@@ -188,27 +222,25 @@ Nearly all user interactions with a device in LabChart Lightning are performed o
 
 LabChart Lightning will then ensure settings changes are persisted across runs of the application.
 
-
 ![Adjusting sampling rate](images/adjust-rate.png)
 
 ## Further examples included with the SDK
 
 **`examples/devices/SerialSettings.ts`**
 
-* A serial device whose parser is based on the OpenBCI protocol
-* Exposes two user configurable settings: sampling rate and gain for each produced data stream.
-* Signal sampling settings UI is described within `SerialSettingsUI.ts`
+-  A serial device whose parser is based on the OpenBCI protocol
+-  Exposes two user configurable settings: sampling rate and gain for each produced data stream.
+-  Signal sampling settings UI is described within `SerialSettingsUI.ts`
 
 **`examples/devices/SerialSettingsWithMappedInputs`**
 
-* A serial device whose parser is based on the OpenBCI protocol
-* Exposes two user configurable settings: sampling rate and gain for each produced data stream.
-* `SerialWithMappedInputsUI.ts` shows how to add a list element to the signal sampling settings UI for choosing which device input will be recorded from.
+-  A serial device whose parser is based on the OpenBCI protocol
+-  Exposes two user configurable settings: sampling rate and gain for each produced data stream.
+-  `SerialWithMappedInputsUI.ts` shows how to add a list element to the signal sampling settings UI for choosing which device input will be recorded from.
 
 **`examples/devices/Teensy_4_1`**
 
-* Two different timer options are available, a simple interrupt and then a direct connection the ADC.
-
+-  Two different timer options are available, a simple interrupt and then a direct connection the ADC.
 
 <br/>
 

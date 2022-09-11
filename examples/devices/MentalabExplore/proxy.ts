@@ -391,7 +391,7 @@ export class ProxyDevice implements IProxyDeviceImpl {
     * @param callback
     */
    reopen = (
-      argJson: {} | undefined,
+      argJson: unknown,
       callback: (
          error: Error | null,
          result: { connectionError: boolean; deviceError: string } | null
@@ -413,7 +413,12 @@ export class ProxyDevice implements IProxyDeviceImpl {
             connection.stop();
          }
       } catch (ex) {
-         callback(null, { connectionError: true, deviceError: ex.message });
+         let message = 'Error reopening connection';
+         if (ex instanceof Error) {
+            message = ex.message;
+         }
+
+         callback(null, { connectionError: true, deviceError: message });
          return;
       }
       //The Mentalab BlueTooth serial port can fail to open if the open is too soon
@@ -422,7 +427,11 @@ export class ProxyDevice implements IProxyDeviceImpl {
          try {
             connection.start();
          } catch (ex) {
-            callback(null, { connectionError: true, deviceError: ex.message });
+            let message = 'Error reopening connection';
+            if (ex instanceof Error) {
+               message = ex.message;
+            }
+            callback(null, { connectionError: true, deviceError: message });
          }
          let lastError = connection.lastError();
          if (connection.isOpen()) {
