@@ -17,11 +17,11 @@ These techniques are:
 3. Round-trip time sync (typical error +/- 1 ms)
 4. Sample-counting time sync (typical error +/- 100 ms)
 
-When more than one device is being used in a recording, one device is designated the "primary device". The samples in the fastest channel from this device (i.e. "ticks") are used to determine the timing for the recording, i.e. the time from the start of block shown in the Chart View. 
+When more than one device is being used in a recording, one device is designated the "primary device". The samples in the fastest channel from this device (i.e. "ticks") are used to determine the timing for the recording, e.g. on the time axis shown in the Chart View. 
 
 Three of these techniques (2, 3, 4) rely on Lightning resampling data from the non-primary devices, using timing information provided by those devices, so the recorded samples are aligned as accurately as possible with the "ticks" from the primary device, across channels.
 
-If the primary device supports "USB locked" time synchronization (1.), any other devices that support "USB locked" time synchronization do not need to have their samples resampled by Lightning to match the rate of the primary device. In this case, these other devices are also effectively "primary" devices.
+If the primary device supports "USB locked" time synchronization (1.), any other devices that also support "USB locked" time synchronization do not need to have their samples resampled by Lightning to match the rate of the primary device. This results in the most accurate inter-device time sync and avoids any artifacts introduced by the resampling process. In this case, these other devices are also effectively "primary" devices.
 
 In the Arduino examples (e.g. SAMD51Lightning.ino) the time sync capabilities of the device are reported in the version information returned from the firmware in response to the 'v' command, as specified by the ADIDeviceSynchModes enumeration. Responding with kDeviceSynchNone will result in "Sample-counting time sync" with an inter-device timing error of the order of +/- 100 ms.
 
@@ -31,7 +31,7 @@ Both USB sync techiques (1. and 2.) require that the devices are plugged into th
 
 USB locking (1.) with 'Start on USB frame' is the most accurate technique and is used by the PowerLab C-Series. The SDK provides example firmware for MicroChip SAMD51 and SAMD21 microcontrollers showing how implement this by locking the master clock (used to initiate Analog to Digital Converter (ADC) conversions) to the USB Start of Frame signal using the Digital Frequency Locked Loop (DFLL) feature provided by these processors. Because of the highly accurate inter-device timing enabled by this scheme, we recommend using the SAMD51 series for new designs.
 
-USB-frame time sync (2.) is the next most accurate technique and is currently used by older PowerLabs. This is simpler to implement in firmware since the firmware only needs to measure the time of the latest USB Start Of Frame interrupt so this can be reported to Lighting when requested. No phase locking is needed.
+USB-frame time sync (2.) is the next most accurate technique and is used by non C-Series PowerLabs. This is simpler to implement in firmware since the firmware only needs to measure the time of the latest USB Start Of Frame interrupt and report this to Lighting when requested. No phase locking is needed.
 
 
 To support USB-frame time sync the Arduino device firmware needs to support:
@@ -46,7 +46,7 @@ The kDeviceSyncUSBFrameTimes option means the Lightning will send a 'u' command 
 
 It is essential that the timer used to measure the time of the USB Start Of Frame (SOF) interrupt is driven from the same clock that drives the ADC sample conversions. 
 
-Inaddition to the time of the last USB SOF interrupt and corresponding 11 bit frame number, the 'u' command needs to return the time the 'u' command is received. Lightning uses this time for sanity checking purposes.
+In addition to the time of the last USB SOF interrupt and corresponding 11 bit frame number, the 'u' command needs to return the time the 'u' command is received. Lightning uses this time for error checking.
 The kDeviceSyncUSBFrameTimes option results in an inter-device timing error < +/- 50 us.
 
 The most accurate time sync mode, USB locking (1.) with 'Start on USB frame', is activated by the version command reporting "deviceSyncModes: kDeviceSynchUSBFullSuppport". Depending on the firmware, this is capable of providing sub-microsecond timing accuracy relative to the primary device. In addition to the above commands, this mode requires the firmware to support:
@@ -61,7 +61,7 @@ Round-trip time sync can provide an error < +/- 1 ms and requires the firmware a
 1. an immediate read of the device's clock
 2. the time of the device's clock at which the first sample in the sampling session was measured
 
-The ArduinoRoundTrip.ts script in the SDK, along with the example firmware for the Arduino (DueLightning, SAMD51Lightning and SAMDLightning) show how to implement the two measurements required for round-trip time sync.
+The ArduinoRoundTrip.ts script in the SDK, along with the example firmware for the Arduino (DueLightning, SAMD51Lightning and SAMDLightning) shows how to implement the two measurements required for round-trip time sync.
 To support Round-trip time sync the ProxyDevice in the Typescript device script must implement 3 methods:
 - getRemoteTimePointInfo()
 - getRemoteTime()
@@ -79,9 +79,9 @@ The ArduinoExample.ts script in the SDK shows how to reduce the initial time off
  - getStartDelayMicroSeconds()
  - getLocalClockTickAtSamplingStart()
 
- The first function allows a known fixed delay between the device being told to start sampling and the first sample being captured to be compensated for by shifting the device's data relative to the other devices.
+ The first function supports compensating for a known fixed delay between the device being told to start sampling and the first sample being captured, by shifting the device's data relative to the other devices.
 
-The second function allow the device script to read the time of the PCs clock at an event that is most consistent relative to the time the device actually started sampling, e.g. just before or just after the start sampling command was sent, or when the first sample is received.
+The second function allows the device script to read the time of the PC's clock at an event that is most consistent relative to the time the device actually started sampling, e.g. just before or just after the start sampling command was sent, or when the first sample is received.
 
 
 
