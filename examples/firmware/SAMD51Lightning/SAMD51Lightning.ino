@@ -60,6 +60,7 @@ enum ADIDeviceSynchModes
    kDeviceSyncUSBFrameTimes = 2 | 0,
    kDeviceSynchUSBLocked = 4 | 0,
    kDeviceSynchUSBStartOnSpecifiedFrame = 8 | 0,
+   kDeviceSynchUSBFrametimeSuppport = kDeviceSyncRoundTrip | kDeviceSyncUSBFrameTimes,
    kDeviceSynchUSBFullSuppport = kDeviceSyncRoundTrip | kDeviceSyncUSBFrameTimes | kDeviceSynchUSBLocked | kDeviceSynchUSBStartOnSpecifiedFrame | 0,
 };
 
