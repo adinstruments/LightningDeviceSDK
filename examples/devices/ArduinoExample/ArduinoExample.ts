@@ -53,7 +53,8 @@ import {
    TimePointInfo,
    ADITimePointInfoFlags,
    FirstSampleRemoteTime,
-   IDeviceVersionInfo
+   IDeviceVersionInfo,
+   TInt64
 } from '../../../public/device-api';
 
 import { Setting } from '../../../public/device-settings';
@@ -73,6 +74,11 @@ const kMinimumSamplingUpdatePeriodms = 50;
 // Imported libs set in getDeviceClass(libs) in module.exports below
 // obtained from quark-enums
 type Enum = { [key: string]: number };
+
+//Uncomment this and getStartDelayMicroSeconds() below to cause Lightning to
+//shift the recorded data from this device by a fixed offset.
+//Remember to set the offset to the one that you have measured!
+//const kTimeFromStartToFirstSampleMicroSeconds = 12000;
 
 const kSettingsVersion = 1;
 
@@ -217,7 +223,7 @@ export class PhysicalDevice implements OpenPhysicalDevice {
    deviceStream: DuplexStream;
    parser: ParserWithSettings;
    numberOfChannels: number;
-   timePointInfo: TimePointInfo;
+   timePointInfo?: TimePointInfo;
 
    constructor(
       private deviceClass: DeviceClass,
@@ -241,13 +247,14 @@ export class PhysicalDevice implements OpenPhysicalDevice {
          this.serialNumber = versionInfo.serialNumber;
       else this.serialNumber = `xxx`; //TODO: get this from versionInfo (which should be JSON)
 
-      this.timePointInfo = new TimePointInfo(
-         { numerator: 1000000 | 0, denominator: 1 | 0 }, //1 MHz (Arduino micros() in microseconds)
-         32 | 0, //The Arduino firmware returns its clock tick as a 32 bit integer
-         ADITimePointInfoFlags.kTPInfoDefault
-      );
-
       if (versionInfo.deviceSynchModes) {
+         //Device supports some level of time synchronization, create TimePointInfo.
+         this.timePointInfo = new TimePointInfo(
+            { numerator: 1000000 | 0, denominator: 1 | 0 }, //1 MHz (Arduino micros() in microseconds)
+            32 | 0, //The Arduino firmware returns its clock tick as a 32 bit integer
+            ADITimePointInfoFlags.kTPInfoDefault
+         );
+
          this.timePointInfo.flags |= versionInfo.deviceSynchModes;
       }
 
@@ -993,8 +1000,9 @@ class ProxyDevice implements IProxyDevice {
    startSampling(startOnUSBFrame?: number): boolean {
       if (!this.parser || !this.physicalDevice) return false; // Can't sample if no hardware connection
       if (
+         this.physicalDevice.timePointInfo &&
          this.physicalDevice.timePointInfo.flags &
-         ADITimePointInfoFlags.kDeviceSynchUSBStartOnSpecifiedFrame
+            ADITimePointInfoFlags.kDeviceSynchUSBStartOnSpecifiedFrame
       ) {
          return this.parser.startSampling(startOnUSBFrame);
       } else {
@@ -1071,12 +1079,13 @@ class ProxyDevice implements IProxyDevice {
     * Optional method - only implement if round-trip time measurements are supported by the
     *device.
     */
-   getRemoteTimePointInfo(): TimePointInfo {
+   getRemoteTimePointInfo(): TimePointInfo | undefined {
       if (this.physicalDevice) {
          return this.physicalDevice.timePointInfo;
       }
-      ProxyDevice.kTimePointInfo;
-      return ProxyDevice.kTimePointInfo;
+      //Tell Quark the device does not provide any time synch support. It will fall back to
+      //sample counting synch.
+      return undefined;
    }
 
    /**
@@ -1110,6 +1119,27 @@ class ProxyDevice implements IProxyDevice {
       if (this.proxyDeviceSys) {
          this.proxyDeviceSys.onRemoteTimeEvent(error, timePoint);
       }
+   }
+
+   //Optional support for compensating for a known fixed delay between asking the device
+   //to start sampling and the time when the first sample is actually measured
+   //by the ADC on the device.
+   // getStartDelayMicroSeconds(): number {
+   //    return kTimeFromStartToFirstSampleMicroSeconds;
+   // }
+
+   //Optional support for providing a more accurate estimate of the time (using the local PC's steady clock)
+   //at which the device actually started sampling
+   getLocalClockTickAtSamplingStart(): TInt64 | undefined {
+      if (this.parser) {
+         const timeSynchFlags = this.physicalDevice?.timePointInfo?.flags;
+         if (timeSynchFlags) {
+            //If the device supports round-trip or USB frame sync, we don't want to use the parser's start time!
+            return undefined;
+         }
+         return this.parser.localClockAtSamplingStart;
+      }
+      return undefined;
    }
 }
 
