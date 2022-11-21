@@ -13,7 +13,7 @@
 Adafruit_ZeroTimer adcTimer(4);
 
 #ifdef TIMER_OUTPUT_FOR_TEST
-Adafruit_ZeroTimer zt3(3, GCLK_PCHCTRL_GEN_GCLK2_Val); //Testing with GCLK2 set to 48MHz not 100 MHz
+Adafruit_ZeroTimer zt3(3, GCLK_PCHCTRL_GEN_GCLK2_Val); // Testing with GCLK2 set to 48MHz not 100 MHz
 #endif
 
 /* Valid PWM outs (for Adafruit Feather ):
@@ -65,7 +65,7 @@ enum ADIDeviceSynchModes
 };
 
 #ifdef TIMING_CHECK
-const int kDefaultADCPointsPerSec = 1; //1024;//100; //~5000 max with 2 samples (1 point) per packet
+const int kDefaultADCPointsPerSec = 1; // 1024;//100; //~5000 max with 2 samples (1 point) per packet
 #else
 const int kDefaultADCPointsPerSec = 100; //~5000 max with 2 samples (1 point) per packet
 #endif
@@ -75,10 +75,10 @@ int gADCPointsPerSec = kDefaultADCPointsPerSec; //~5000 max with 2 samples (1 po
 const int kSampleRates[] = {10000, 4000, 2000, 1000, 400, 200, 100};
 const int kNSampleRates = sizeof(kSampleRates) / sizeof(int);
 
-const int kADCStartChan = 2; //A1
+const int kADCStartChan = 2; // A1
 
 #ifdef TIMING_CHECK
-const int kADCChannels = 1; //2;
+const int kADCChannels = 1; // 2;
 #else
 const int kADCChannels = 2;
 #endif
@@ -87,7 +87,7 @@ const int kADCEndChan = kADCStartChan + kADCChannels;
 
 void debugNewLine()
 {
-   //Serial.write('\n'); //Readability while testing only!
+   // Serial.write('\n'); //Readability while testing only!
 }
 
 inline uint32_t saveIRQState(void)
@@ -139,11 +139,16 @@ void startADCTimer(uint32_t frequency)
                       TC_COUNTER_SIZE_32BIT,        // bit width of timer/counter
                       TC_WAVE_GENERATION_MATCH_FREQ // frequency or PWM mode
    );
-   //adcTimer.setPeriodMatch(1000, 200);      // channel 1 only, 200/1000 count
-   //Adafruit timer routines set the timer source to GCLK1 (48 MHz)
-   adcTimer.setCompare(0, VARIANT_GCLK1_FREQ / frequency - 1);
+   // adcTimer.setPeriodMatch(1000, 200);      // channel 1 only, 200/1000 count
+   // Adafruit timer routines set the timer source to GCLK1 (48 MHz)
+
+   // N.B. we initialise the counter value with periodGCLK1TicksMinus1, same as the
+   // compare value so that the timer fires immediately, triggering the ADC rather
+   // than waiting for a sample period.
+   uint32_t periodGCLK1TicksMinus1 = VARIANT_GCLK1_FREQ / frequency - 1;
+   adcTimer.setCompare(0, periodGCLK1TicksMinus1, periodGCLK1TicksMinus1);
 #ifdef ENABLE_ADCTIMER_PWMOUT
-   //N.B. this will be at half the rate of the ADC (i.e. each edge triggers a set of conversions across channels)
+   // N.B. this will be at half the rate of the ADC (i.e. each edge triggers a set of conversions across channels)
    if (!adcTimer.PWMout(true, 0, TIMER4_OUT0))
    {
       Serial.println("Failed to configure PWM output");
@@ -154,7 +159,7 @@ void startADCTimer(uint32_t frequency)
    while (TC4->COUNT32.SYNCBUSY.reg > 0)
       ; // Wait for synchronization
 
-   //Setup event system so TC4 triggers ADC conversion start
+   // Setup event system so TC4 triggers ADC conversion start
    MCLK->APBBMASK.reg |= MCLK_APBBMASK_EVSYS;
 
    // Select the event system user on channel 0 (USER number = channel number + 1)
@@ -164,13 +169,13 @@ void startADCTimer(uint32_t frequency)
                                    EVSYS_CHANNEL_PATH_ASYNCHRONOUS |            // Set event path as asynchronous
                                    EVSYS_CHANNEL_EVGEN(EVSYS_ID_GEN_TC4_MCX_0); // Set event generator (sender) as TC4 Match/Capture 0
 
-   //Now do this in USBHandlerHook() so sampling starts on a USB Frame
-   //adcTimer.enable(true);
+   // Now do this in USBHandlerHook() so sampling starts on a USB Frame
+   // adcTimer.enable(true);
 }
 
 void adc_setup()
 {
-   //Setup ADC
+   // Setup ADC
 
    analogReadResolution(12);
    analogReference(AR_DEFAULT);
@@ -181,16 +186,16 @@ void adc_setup()
    ADC0->INPUTCTRL.bit.MUXPOS = kADCStartChan;
    syncADC0_INPUTCTRL();
 
-   //PM->APBCMASK.reg |= PM_APBCMASK_ADC; already done by wiring.c
+   // PM->APBCMASK.reg |= PM_APBCMASK_ADC; already done by wiring.c
 
-   ADC0->EVCTRL.reg = ADC_EVCTRL_STARTEI; //Start on event
+   ADC0->EVCTRL.reg = ADC_EVCTRL_STARTEI; // Start on event
 
-   ADC0->INTENSET.reg = ADC_INTENSET_RESRDY; //Enable interrupt on result ready
+   ADC0->INTENSET.reg = ADC_INTENSET_RESRDY; // Enable interrupt on result ready
 
    ADC0->CTRLA.bit.ENABLE = 1; // Enable ADC
    syncADC0_ENABLE();
 
-   //NVIC_SetPriority(ADC_IRQn, 0);    // Set the Nested Vector Interrupt Controller (NVIC) priority for ADC to 0 (highest)
+   // NVIC_SetPriority(ADC_IRQn, 0);    // Set the Nested Vector Interrupt Controller (NVIC) priority for ADC to 0 (highest)
 
    NVIC_EnableIRQ(ADC0_1_IRQn);
 }
@@ -235,20 +240,20 @@ public:
       return false;
    }
 
-   //Returns num pushed
+   // Returns num pushed
    int Push(const T *val, TIndex nToPushIn)
    {
       TIndex nToPushRemain = nToPushIn;
       TIndex space = GetSpace();
 
       if (nToPushRemain > space)
-         nToPushRemain = space; //limit to available space
+         nToPushRemain = space; // limit to available space
       else
-         space = nToPushIn; //space is now number that will be pushed
+         space = nToPushIn; // space is now number that will be pushed
 
       if (nToPushRemain)
-      {                                    //There is space
-         TIndex lenToCopy1 = (Size - mIn); //space available before wrapping
+      {                                    // There is space
+         TIndex lenToCopy1 = (Size - mIn); // space available before wrapping
          if (lenToCopy1 > nToPushRemain)
             lenToCopy1 = nToPushRemain;
          memcpy(mBuffer + mIn, val, lenToCopy1 * sizeof(T));
@@ -257,14 +262,14 @@ public:
             mIn -= Size;
          nToPushRemain -= lenToCopy1;
          if (nToPushRemain)
-         { //still some left to copy, wrap to start of buffer
+         { // still some left to copy, wrap to start of buffer
             memcpy(mBuffer, val + lenToCopy1, nToPushRemain * sizeof(T));
             mIn += nToPushRemain;
             if (mIn >= Size)
                mIn -= Size;
          }
       }
-      return space; //Space is number pushed.
+      return space; // Space is number pushed.
    }
 
    bool Get(T *val) const
@@ -329,7 +334,7 @@ const int kPointsPerMediumSizePacket = 10;
 
 int gADCPointsPerPacket = kPointsPerPacket;
 
-//Statically allocating individual buffers larger than this causes the firmware to crash for some reason
+// Statically allocating individual buffers larger than this causes the firmware to crash for some reason
 const int kTotalBufferSpaceBytes = kADCChannels < 2 ? 32000 : 64000;
 
 const int kBufferPoints = kTotalBufferSpaceBytes / kBytesPerSample / kADCChannels;
@@ -360,7 +365,7 @@ volatile int16_t gStartOnFrame = -1; //-1 means start on the next USB frame
  * Measured one fine step (133 to 134) to give a frequency offset of 5 parts in 10000
  * with the SAMD51.
  * Measured one coarse step to equal 12 fine steps. It was intially 29 out of 64 steps total.
-*/
+ */
 #if defined(__SAMD51__)
 const int kDFLLFineMax = 127;
 const int kDFLLFineMin = -128;
@@ -372,7 +377,7 @@ const int kDFLLFineMin = -512;
 extern "C" void UDD_Handler(void);
 
 const int32_t kUSBFramePeriodus = 1000;
-const int kUSBFrameBits = 11; //USB frame count is 11 bits
+const int kUSBFrameBits = 11; // USB frame count is 11 bits
 const int32_t kUSBFrameCountMask = (1 << kUSBFrameBits) - 1;
 const int32_t kUSBFrameMSBitMask = 1 << (kUSBFrameBits - 1);
 
@@ -397,7 +402,7 @@ const int kOneOverClippedLeadGainus = 1;
 #endif
 const int kFixedPointScaling = kOneOverLagGainus * kHighSpeedTimerTicksPerus;
 
-//1 us per ms is larger than any crystal error we should need to measure
+// 1 us per ms is larger than any crystal error we should need to measure
 const int kMaxRateErrorClipTicksPerms = 1 * kHighSpeedTimerTicksPerus;
 const uint32_t kLockDetectAccumTCms = 256;
 const int32_t kLockedPhaseLimit_us = 20;
@@ -405,10 +410,10 @@ const int32_t kLockedPhaseLimitTicks = kLockedPhaseLimit_us * kHighSpeedTimerTic
 
 volatile bool gUSBLocked = false;
 
-//Integrator for integral feedback to remove DC error
+// Integrator for integral feedback to remove DC error
 volatile int32_t sPSDPhaseAccum = 0;
 
-//First order LPF for lead (proportional) feedback
+// First order LPF for lead (proportional) feedback
 volatile int32_t gLeadPhaseAccum = 0;
 const int kLeadPhaseTC = 16;
 
@@ -416,27 +421,27 @@ volatile int32_t gLastUSBSOFTimeus = 0;
 
 void USBHandlerHook(void)
 {
-   if (USB->DEVICE.INTFLAG.bit.SOF) //Start of USB Frame interrupt
+   if (USB->DEVICE.INTFLAG.bit.SOF) // Start of USB Frame interrupt
    {
-      //Measure phase using Cortex cpu timer. Convert to 0.25 us ticks using a runtime multiply and compile time divides for speed.
+      // Measure phase using Cortex cpu timer. Convert to 0.25 us ticks using a runtime multiply and compile time divides for speed.
       int32_t frameTick = ((SysTick->LOAD - SysTick->VAL) * (kHighSpeedTimerTicksPerus * 1024 * 1024 / (VARIANT_MCK / 1000000))) >> 20;
-      //auto frame_us = frameTick / kHighSpeedTimerTicksPerus;
+      // auto frame_us = frameTick / kHighSpeedTimerTicksPerus;
 
       int32_t newUSBSOFTimeus = micros();
       int16_t frameNumber = USB->DEVICE.FNUM.bit.FNUM;
 
-      //In general, micros() is not reliable when called from within an Interrupt Service Routine
-      //and it is difficult to implement reliably across platforms.
-      //When the processor is locked to USB, the USB SOF interrupts are happening around the same
-      //time as the 1 kHz system timer interrupts that increment millis.
-      //As a result, the hardware timer part of micros() can wrap before the millis part has been
-      //incremented.
-      //The following lines check for this case and handle it in a processor independent way.
+      // In general, micros() is not reliable when called from within an Interrupt Service Routine
+      // and it is difficult to implement reliably across platforms.
+      // When the processor is locked to USB, the USB SOF interrupts are happening around the same
+      // time as the 1 kHz system timer interrupts that increment millis.
+      // As a result, the hardware timer part of micros() can wrap before the millis part has been
+      // incremented.
+      // The following lines check for this case and handle it in a processor independent way.
       int32_t lastUSBSOFTimeus = gLastUSBSOFTimeus;
       if (newUSBSOFTimeus - lastUSBSOFTimeus < kUSBFramePeriodus / 2)
       {
          newUSBSOFTimeus += kUSBFramePeriodus;
-         //digitalWrite(LED_BUILTIN, LOW);
+         // digitalWrite(LED_BUILTIN, LOW);
       }
 
       // auto frameDelta = frameNumber - gLastFrameNumber;
@@ -455,41 +460,42 @@ void USBHandlerHook(void)
          {
             adcTimer.enable(true);
             gState = kStartingSampling;
+            gFirstADCPointus = newUSBSOFTimeus;
          }
       }
-      //frameus in range [0, 1000)
-      //usbd.frameNumber();
+      // frameus in range [0, 1000)
+      // usbd.frameNumber();
 
-      //if(gPrevFrameTick >= 0)
+      // if(gPrevFrameTick >= 0)
       {
          static int32_t sLastPhase = 0;
 
          int phase = frameTick;
-         //phase needs to be bipolar, so wrap values above kHighSpeedTimerTicksPerUSBFrame/2 to be -ve. We want to lock with frameHSTick near 0.
+         // phase needs to be bipolar, so wrap values above kHighSpeedTimerTicksPerUSBFrame/2 to be -ve. We want to lock with frameHSTick near 0.
          if (phase >= kHighSpeedTimerTicksPerUSBFrame / 2)
             phase -= kHighSpeedTimerTicksPerUSBFrame;
 
-         //If phase > 0 the USB frame was later than the SYSTICK wrap so we need to
-         //slow down the system clock a little.
+         // If phase > 0 the USB frame was later than the SYSTICK wrap so we need to
+         // slow down the system clock a little.
 
-         //One-sided clip of phase to reduce effect of ISR latency spikes.
-         // I.e. clip large +ve going deltas resulting from the ISR being delayed, causing phase
-         // to be larger than it should be.
+         // One-sided clip of phase to reduce effect of ISR latency spikes.
+         //  I.e. clip large +ve going deltas resulting from the ISR being delayed, causing phase
+         //  to be larger than it should be.
          int32_t deltaPhaseTicks = phase - sLastPhase;
          if (gUSBLocked && deltaPhaseTicks > kMaxRateErrorClipTicksPerms)
          {
             phase = sLastPhase + kMaxRateErrorClipTicksPerms;
-            digitalWrite(LED_BUILTIN, LOW); //Diagnostic
+            digitalWrite(LED_BUILTIN, LOW); // Diagnostic
          }
 
          sLastPhase = phase;
 
-         //First order LPF for lead (proportional) feedback (LPF to reduce the effects of phase detector noise)
+         // First order LPF for lead (proportional) feedback (LPF to reduce the effects of phase detector noise)
          gLeadPhaseAccum += phase;
          int leadPhase = gLeadPhaseAccum / kLeadPhaseTC;
          gLeadPhaseAccum -= leadPhase;
 
-         //First order LPF for lock detect
+         // First order LPF for lock detect
          static uint32_t sLockDetectAccum = 0;
 
          sLockDetectAccum += abs(leadPhase);
@@ -498,21 +504,21 @@ void USBHandlerHook(void)
          sLockDetectAccum -= lockError;
          gUSBLocked = abs(lockError) < kLockedPhaseLimitTicks;
 
-         //Unfiltered lead feedback clipped to +/- 1 to reduce the effects of phase detector noise without adding delay
+         // Unfiltered lead feedback clipped to +/- 1 to reduce the effects of phase detector noise without adding delay
          int signOfPhase = 0;
          if (phase > 0)
             signOfPhase = 1;
          else if (phase < 0)
             signOfPhase = -1;
 
-         //Calculate the filtered error signal
+         // Calculate the filtered error signal
          int32_t filterOut = (signOfPhase * kFixedPointScaling / kOneOverClippedLeadGainus +
                               leadPhase * kFixedPointScaling / (kOneOverLeadGainus * kHighSpeedTimerTicksPerus) +
                               sPSDPhaseAccum) /
                              kFixedPointScaling;
-         sPSDPhaseAccum += phase; //integrate the phase to get lag (integral, 2nd order) feedback
+         sPSDPhaseAccum += phase; // integrate the phase to get lag (integral, 2nd order) feedback
 
-         //Clip to limits of DCO
+         // Clip to limits of DCO
          if (filterOut > kDFLLFineMax)
             filterOut = kDFLLFineMax;
          else if (filterOut < kDFLLFineMin)
@@ -522,12 +528,12 @@ void USBHandlerHook(void)
 
          gLastDCOControlVal = newDCOControlVal;
 
-//Set DCO control value
+// Set DCO control value
 #ifdef PHASE_LOCK_TO_USB_SOF
 #if defined(__SAMD51__)
          OSCCTRL->DFLLVAL.bit.FINE = newDCOControlVal & 0xff;
 #else
-         //SAMD21 has 10 bit fine DCO control
+         // SAMD21 has 10 bit fine DCO control
          SYSCTRL->DFLLVAL.bit.FINE = newDCOControlVal & 0x3ff;
 #endif
 #endif
@@ -544,25 +550,25 @@ void setup()
 {
    auto irqState = saveIRQState();
 
-//Open loop mode
+// Open loop mode
 #if defined(__SAMD51__)
    OSCCTRL->DFLLCTRLB.reg &= ~OSCCTRL_DFLLCTRLB_MODE;
 #else
-   //SAMD21
+   // SAMD21
    SYSCTRL->DFLLCTRL.reg &= ~SYSCTRL_DFLLCTRL_MODE
 #endif
 
    USB_SetHandler(&USBHandlerHook);
    restoreIRQState(irqState);
 
-   Serial.begin(0); //baud rate is ignored
+   Serial.begin(0); // baud rate is ignored
    while (!Serial)
       ;
 
    Serial.setTimeout(50);
 
-   pinMode(1, OUTPUT); //Test only - toggles on eachUSB SOF
-   pinMode(6, OUTPUT); //Test only - toggles on each ADC_Handler()
+   pinMode(1, OUTPUT); // Test only - toggles on eachUSB SOF
+   pinMode(6, OUTPUT); // Test only - toggles on each ADC_Handler()
    pinMode(LED_BUILTIN, OUTPUT);
    digitalWrite(LED_BUILTIN, LOW);
 
@@ -572,7 +578,7 @@ void setup()
                  TC_COUNTER_SIZE_16BIT,       // bit width of timer/counter
                  TC_WAVE_GENERATION_MATCH_PWM // frequency or PWM mode
    );
-   const uint32_t kTicks = VARIANT_GCLK2_FREQ / 1000; ///1024;
+   const uint32_t kTicks = VARIANT_GCLK2_FREQ / 1000; /// 1024;
    zt3.setPeriodMatch(kTicks - 1, kTicks / 4);        // channel 1 only, 200/1000 count
    if (!zt3.PWMout(true, 1, TIMER3_OUT1))
    {
@@ -580,8 +586,8 @@ void setup()
    }
 
 #ifdef _VARIANT_SAMD51_THING_PLUS_
-   //Sparkfun Thing Plus has different pin mapping from Adafruit Feather M4
-   PORT->Group[0].PINCFG[15].reg = PORT_PINCFG_PMUXEN; //PA15
+   // Sparkfun Thing Plus has different pin mapping from Adafruit Feather M4
+   PORT->Group[0].PINCFG[15].reg = PORT_PINCFG_PMUXEN; // PA15
    PORT->Group[0].PMUX[7].reg &= ~(PORT_PMUX_PMUXO_Msk);
    PORT->Group[0].PMUX[7].reg |= 0x04 << 4; //   PORT_PMUX_PMUXO_E;
 #endif
@@ -618,27 +624,27 @@ void ADC0_1_Handler()
 #ifdef OUTPUT_USB_SOF_PLL_SIGNALS
    if (chan - kADCStartChan == 0)
    {
-      //val = gLastBit;
-      //gLastBit = 1-gLastBit;
+      // val = gLastBit;
+      // gLastBit = 1-gLastBit;
       val = gPrevFrameTick;
       if (val >= kHighSpeedTimerTicksPerUSBFrame / 2)
          val -= kHighSpeedTimerTicksPerUSBFrame;
    }
    else if (chan - kADCStartChan == 1)
    {
-      val = gLastDCOControlVal; //OSCCTRL->DFLLVAL.bit.FINE;
+      val = gLastDCOControlVal; // OSCCTRL->DFLLVAL.bit.FINE;
    }
    val += 2048;
 #endif
 
    if (!gSampleBuffers[chan - kADCStartChan].Push(val))
    {
-      //digitalWrite(LED_BUILTIN, LOW); //Turn off LED to indicate overflow
+      // digitalWrite(LED_BUILTIN, LOW); //Turn off LED to indicate overflow
    }
 
    if (chan == kADCStartChan && gState == kStartingSampling)
    {
-      gFirstADCPointus = micros();
+      // gFirstADCPointus = micros();
       gState = kHadFirstSample;
    }
 
@@ -656,7 +662,7 @@ void ADC0_1_Handler()
       syncADC0_INPUTCTRL();
    }
 
-   //digitalWrite(6, gADCstate = !gADCstate );
+   // digitalWrite(6, gADCstate = !gADCstate );
 }
 
 class PacketBase
@@ -669,11 +675,11 @@ uint8_t PacketBase::sPacketCount = 0;
 
 class Packet : protected PacketBase
 {
-   //The header is 5 nibbles, i.e. "P\xA0\x40". The low nibble of the
-   //3rd byte is the packet time (0x04) for data packets.
-   //The head and packet type is followed by a 1 byte packet count number,
-   //making a total of 4 bytes before the payload daya that need to match the
-   //expected pattern(s) before the client can detect a packet.
+   // The header is 5 nibbles, i.e. "P\xA0\x40". The low nibble of the
+   // 3rd byte is the packet time (0x04) for data packets.
+   // The head and packet type is followed by a 1 byte packet count number,
+   // making a total of 4 bytes before the payload daya that need to match the
+   // expected pattern(s) before the client can detect a packet.
    const char sHeader[2] = {'P', 0xA0};
 
 public:
@@ -690,10 +696,10 @@ public:
    {
       if (mPoint >= gADCPointsPerPacket)
          return false;
-      //Testing!!
-      //if(chan == 0)
-      //   mData[mPoint][chan] = 0;
-      //else
+      // Testing!!
+      // if(chan == 0)
+      //    mData[mPoint][chan] = 0;
+      // else
       mData[mPoint][chan] = (sample << 4) - 0x8000;
 
       return true;
@@ -704,11 +710,11 @@ public:
       ++mPoint;
    }
 
-   //returns number of bytes written
+   // returns number of bytes written
    int write(Stream &stream) const
    {
       int n = stream.write(sHeader, 2);
-      //Write the packet type byte (D for data, M for medium sized data packet)
+      // Write the packet type byte (D for data, M for medium sized data packet)
       n += stream.write(uint8_t(gADCPointsPerPacket == 1 ? 'D' : 'M'));
       n += stream.write(sPacketCount++);
       n += stream.write(reinterpret_cast<const uint8_t *>(mData), sizeof(int16_t) * kADCChannels * gADCPointsPerPacket);
@@ -738,7 +744,7 @@ public:
       return n;
    }
 
-   //returns number of bytes written
+   // returns number of bytes written
    int write(Stream &stream) const
    {
       int n = stream.write(sHeaderAndPacketType, 3);
@@ -762,7 +768,7 @@ public:
       mFrameTimeus = latestFrameus;
    }
 
-   //returns number of bytes written
+   // returns number of bytes written
    int write(Stream &stream) const
    {
       int n = stream.write(sHeaderAndPacketType, 3);
@@ -787,7 +793,7 @@ public:
       mData[0] = tick32us;
    }
 
-   //returns number of bytes written
+   // returns number of bytes written
    int write(Stream &stream) const
    {
       int n = stream.write(sHeaderAndPacketType, 3);
@@ -814,11 +820,11 @@ void StartSampling(int16_t startOnFrame)
 
    adc_setup();
 
-   //Restart the ADC timer
+   // Restart the ADC timer
    startADCTimer(gADCPointsPerSec);
 
-   //digitalWrite(12, LOW); //Clear Buffer overflow
-   //Packet::ResetPacketCount();
+   // digitalWrite(12, LOW); //Clear Buffer overflow
+   // Packet::ResetPacketCount();
    gStartOnFrame = startOnFrame;
    gState = kWaitingForUSBSOF;
 
@@ -845,12 +851,12 @@ void sendFirstSampleTimeIfNeeded()
       return;
 
    gFirstSampleTimeRequested = false;
-   debugNewLine(); //Readability while testing only!
+   debugNewLine(); // Readability while testing only!
 
    FirstSampleTimePacket ftPacket(gFirstADCPointus);
    ftPacket.write(Serial);
 
-   debugNewLine(); //Readability while testing only!
+   debugNewLine(); // Readability while testing only!
 }
 
 void loop()
@@ -879,18 +885,18 @@ void loop()
       auto cmd = cmdBuf[0];
       switch (cmd)
       {
-      case 'b': //begin sampling
+      case 'b': // begin sampling
       {
-         int16_t startOnFrame = -1; //start on next frame
+         int16_t startOnFrame = -1; // start on next frame
          if (bytesRead >= 4 && cmdBuf[1] == 'o')
          {
-            //We assume startOnUSBFrame int16
+            // We assume startOnUSBFrame int16
             startOnFrame = cmdBuf[2] + (cmdBuf[3] << 8);
          }
          StartSampling(startOnFrame);
       }
       break;
-      case 'f': //first sample time
+      case 'f': // first sample time
          gFirstSampleTimeRequested = true;
          if (gState == kSampling)
             sendFirstSampleTimeIfNeeded();
@@ -927,26 +933,26 @@ void loop()
       }
 #endif
 
-      case 's': //stop sampling
+      case 's': // stop sampling
          StopSampling();
          break;
-      case 'n': //return micro second time now
+      case 'n': // return micro second time now
       {
          int32_t now = micros();
-         //uint64_t now64 = micros64();
-         //digitalWrite(5, HIGH);
+         // uint64_t now64 = micros64();
+         // digitalWrite(5, HIGH);
 
          auto timeRequestNumber = cmdBuf[1];
          TimePacket timePacket(now, timeRequestNumber);
          timePacket.write(Serial);
 
-         //digitalWrite(5, LOW);
+         // digitalWrite(5, LOW);
 
          break;
       }
-      case 'u': //time of last USB SOF
+      case 'u': // time of last USB SOF
       {
-         auto irqState = saveIRQState(); //disable interrupts
+         auto irqState = saveIRQState(); // disable interrupts
          auto lastUSBSOFTimeus = gLastUSBSOFTimeus;
          auto lastFrameNumber = gLastFrameNumber;
          int32_t now = micros();
@@ -957,9 +963,9 @@ void loop()
          packet.write(Serial);
          break;
       }
-      case 'v': //version info
-         //Serial.print("ArduinoRT Example V0.9.0 Channels: "+String(kADCChannels)+" $$$");
-         //Send JSON version and capabilies info
+      case 'v': // version info
+         // Serial.print("ArduinoRT Example V0.9.0 Channels: "+String(kADCChannels)+" $$$");
+         // Send JSON version and capabilies info
          Serial.print("{");
          Serial.print("\"deviceClass\": \"Arduino_Example\",");
          Serial.print("\"deviceName\": \"SparkFun SAMD51 Thing Plus\",");
@@ -969,13 +975,13 @@ void loop()
          Serial.print("\"serialNumber\": \"" + String(kSerialNumber) + "\"");
          Serial.print("}$$$");
 
-         Packet::ResetPacketCount(); //new session
+         Packet::ResetPacketCount(); // new session
 
 #ifdef ENABLE_SERIAL_DEBUGGING
          SerialUSB.println("Sent version info");
 #endif
          break;
-      case '~': //sample rate
+      case '~': // sample rate
       {
          auto rateChar = cmdBuf[1]; //'0123456'
          unsigned int index = rateChar - '0';
@@ -1002,7 +1008,7 @@ void loop()
       sendFirstSampleTimeIfNeeded();
    }
 
-   //Find the number of samples in the ringbuffer with the least samples
+   // Find the number of samples in the ringbuffer with the least samples
    int points = gSampleBuffers[0].GetCount();
    for (int chan(1); chan < kADCChannels; ++chan)
    {
@@ -1024,13 +1030,13 @@ void loop()
          packet.nextPoint();
       }
 
-      //digitalWrite(7, HIGH);
+      // digitalWrite(7, HIGH);
       packet.write(Serial);
-      //digitalWrite(7, LOW);
+      // digitalWrite(7, LOW);
 
       --points;
 
-      //debugNewLine();   //Readability while testing only!
+      // debugNewLine();   //Readability while testing only!
    }
 
-} //loop
+} // loop
