@@ -25,21 +25,23 @@
 
 #endif
 
-extern "C" {
+extern "C"
+{
 
 /**! togglebits for callbacks */
 #define TC_CALLBACK_BITS 6
 /**! How many callbacks we get */
 #define TC_MAX_CALLBACKS (TC_CALLBACK_BITS * 3)
 
-static void (*__cb[TC_MAX_CALLBACKS])(void);
-/** Bit mask for callbacks registered */
-static uint32_t _register_callback_mask = 0;
-/** Bit mask for callbacks enabled */
-static uint32_t _enable_callback_mask = 0;
+  static void (*__cb[TC_MAX_CALLBACKS])(void);
+  /** Bit mask for callbacks registered */
+  static uint32_t _register_callback_mask = 0;
+  /** Bit mask for callbacks enabled */
+  static uint32_t _enable_callback_mask = 0;
 };
 
-static inline bool tc_is_syncing(Tc *const hw) {
+static inline bool tc_is_syncing(Tc *const hw)
+{
 #if defined(__SAMD51__)
   return hw->COUNT8.SYNCBUSY.reg > 0;
 #else
@@ -54,9 +56,9 @@ static inline bool tc_is_syncing(Tc *const hw) {
 */
 /**************************************************************************/
 #if defined(__SAMD51__)
-Adafruit_ZeroTimer::Adafruit_ZeroTimer(uint8_t timernum, uint8_t gclk)  : _gclk(gclk)
+Adafruit_ZeroTimer::Adafruit_ZeroTimer(uint8_t timernum, uint8_t gclk) : _gclk(gclk)
 #else
-Adafruit_ZeroTimer::Adafruit_ZeroTimer(uint8_t timernum) 
+Adafruit_ZeroTimer::Adafruit_ZeroTimer(uint8_t timernum)
 #endif
 {
   _timernum = timernum;
@@ -68,7 +70,8 @@ Adafruit_ZeroTimer::Adafruit_ZeroTimer(uint8_t timernum)
     @return True if we were able to init the timer, False on any failure
 */
 /**************************************************************************/
-bool Adafruit_ZeroTimer::tc_init() {
+bool Adafruit_ZeroTimer::tc_init()
+{
   /* Temporary variable to hold all updates to the CTRLA
    * register before they are written to it */
   uint16_t ctrla_tmp = 0;
@@ -103,7 +106,8 @@ bool Adafruit_ZeroTimer::tc_init() {
 
   /* Initialize parameters */
   uint32_t cbmask = 0;
-  for (uint8_t i = 0; i < TC_CALLBACK_BITS; i++) {
+  for (uint8_t i = 0; i < TC_CALLBACK_BITS; i++)
+  {
     __cb[(instance * TC_CALLBACK_BITS) + i] = NULL;
     cbmask |= (1UL << ((instance * TC_CALLBACK_BITS) + i));
   }
@@ -115,32 +119,38 @@ bool Adafruit_ZeroTimer::tc_init() {
    * configured in 32-bit counter size.
    */
   if ((_counter_size == TC_COUNTER_SIZE_32BIT) &&
-      ((instance + TC_INSTANCE_OFFSET) & 0x01)) {
+      ((instance + TC_INSTANCE_OFFSET) & 0x01))
+  {
     return false;
   }
 
-  if (_hw->COUNT8.CTRLA.reg & TC_CTRLA_SWRST) {
+  if (_hw->COUNT8.CTRLA.reg & TC_CTRLA_SWRST)
+  {
     /* We are in the middle of a reset. Abort. */
     return false;
   }
 
-  if (_hw->COUNT8.STATUS.reg & TC_STATUS_SLAVE) {
+  if (_hw->COUNT8.STATUS.reg & TC_STATUS_SLAVE)
+  {
     /* Module is used as a slave */
     return false;
   }
 
-  if (_hw->COUNT8.CTRLA.reg & TC_CTRLA_ENABLE) {
+  if (_hw->COUNT8.CTRLA.reg & TC_CTRLA_ENABLE)
+  {
     /* Module must be disabled before initialization. Abort. */
     return false;
   }
 
   /* Set up the TC PWM out pin for channel 0 */
-  if (_pwm_channel[0].enabled) {
+  if (_pwm_channel[0].enabled)
+  {
     pinPeripheral(_pwm_channel[0].pin_out, (EPioType)_pwm_channel[0].pin_mux);
   }
 
   /* Set up the TC PWM out pin for channel 1 */
-  if (_pwm_channel[1].enabled) {
+  if (_pwm_channel[1].enabled)
+  {
     pinPeripheral(_pwm_channel[1].pin_out, (EPioType)_pwm_channel[1].pin_mux);
   }
 
@@ -153,7 +163,8 @@ bool Adafruit_ZeroTimer::tc_init() {
   PM->APBCMASK.reg |= inst_pm_apbmask[instance];
 
   /* Enable the slave counter if counter_size is 32-bit */
-  if ((_counter_size == TC_COUNTER_SIZE_32BIT)) {
+  if ((_counter_size == TC_COUNTER_SIZE_32BIT))
+  {
     /* Enable the user interface clock in the PM */
     PM->APBCMASK.reg |= inst_pm_apbmask[instance + 1];
   }
@@ -183,7 +194,8 @@ bool Adafruit_ZeroTimer::tc_init() {
   _hw->COUNT8.WAVE.reg = _wave_generation;
 #endif
 
-  if (_count_direction) {
+  if (_count_direction)
+  {
     ctrlbset_tmp |= TC_CTRLBSET_DIR;
   }
 
@@ -193,7 +205,8 @@ bool Adafruit_ZeroTimer::tc_init() {
   _hw->COUNT8.CTRLBCLR.reg = 0xFF;
 
   /* Check if we actually need to go into a wait state. */
-  if (ctrlbset_tmp) {
+  if (ctrlbset_tmp)
+  {
     while (tc_is_syncing(_hw))
       ;
     /* Write configuration to register */
@@ -217,7 +230,8 @@ bool Adafruit_ZeroTimer::tc_init() {
     ;
 
   /* Switch for TC counter size  */
-  switch (_counter_size) {
+  switch (_counter_size)
+  {
   case TC_COUNTER_SIZE_8BIT:
     while (tc_is_syncing(_hw))
       ;
@@ -293,63 +307,82 @@ bool Adafruit_ZeroTimer::tc_init() {
 */
 /**************************************************************************/
 boolean Adafruit_ZeroTimer::PWMout(boolean pwmout, uint8_t channum,
-                                   uint8_t pin) {
+                                   uint8_t pin)
+{
   Tc *const tc_modules[TC_INST_NUM] = TC_INSTS;
 
   if (channum > 1)
     return false; // we only support pwm #0 or #1
 
-  if (!pwmout) {
+  if (!pwmout)
+  {
     _pwm_channel[channum].enabled = false;
-  } else {
+  }
+  else
+  {
     uint32_t pinout = 0xFFFF;
     uint32_t pinmux = 0xFFFF;
 
 #if defined(__SAMD51__)
-    if (_timernum == 3) {
-      if (channum == 0) {
-        if (pin == 10) {
+    if (_timernum == 3)
+    {
+      if (channum == 0)
+      {
+        if (pin == 10)
+        {
           pinout = PIN_PA18E_TC3_WO0;
           pinmux = MUX_PA18E_TC3_WO0;
         }
-        if (pin == MISO) {
+        if (pin == MISO)
+        {
           pinout = PIN_PA14E_TC3_WO0;
           pinmux = MUX_PA14E_TC3_WO0;
         }
       }
-      if (channum == 1) {
-        if (pin == 11) {
+      if (channum == 1)
+      {
+        if (pin == 11)
+        {
           pinout = PIN_PA19E_TC3_WO1;
           pinmux = MUX_PA19E_TC3_WO1;
         }
       }
     }
 #if defined(TC4_GCLK_ID)
-    if (_timernum == 4) {
-      if (channum == 0) {
-        if (pin == A4) {
+    if (_timernum == 4)
+    {
+      if (channum == 0)
+      {
+        if (pin == A4)
+        {
           pinout = PIN_PB08E_TC4_WO0;
           pinmux = MUX_PB08E_TC4_WO0;
         }
-        if (pin == 7) {
+        if (pin == 7)
+        {
           pinout = PIN_PB12E_TC4_WO0;
           pinmux = MUX_PB12E_TC4_WO0;
         }
-        if (pin == 1) {
+        if (pin == 1)
+        {
           pinout = PIN_PA22E_TC4_WO0;
           pinmux = MUX_PA22E_TC4_WO0;
         }
       }
-      if (channum == 1) {
-        if (pin == A5) {
+      if (channum == 1)
+      {
+        if (pin == A5)
+        {
           pinout = PIN_PB09E_TC4_WO1;
           pinmux = MUX_PB09E_TC4_WO1;
         }
-        if (pin == 4) {
+        if (pin == 4)
+        {
           pinout = PIN_PB13E_TC4_WO1;
           pinmux = MUX_PB13E_TC4_WO1;
         }
-        if (pin == 0) {
+        if (pin == 0)
+        {
           pinout = PIN_PA23E_TC4_WO1;
           pinmux = MUX_PA23E_TC4_WO1;
         }
@@ -357,15 +390,20 @@ boolean Adafruit_ZeroTimer::PWMout(boolean pwmout, uint8_t channum,
     }
 #endif // TC4
 #if defined(TC5_GCLK_ID)
-    if (_timernum == 5) {
-      if (channum == 0) {
-        if (pin == 5) {
+    if (_timernum == 5)
+    {
+      if (channum == 0)
+      {
+        if (pin == 5)
+        {
           pinout = PIN_PB14E_TC5_WO0;
           pinmux = MUX_PB14E_TC5_WO0;
         }
       }
-      if (channum == 1) {
-        if (pin == 6) {
+      if (channum == 1)
+      {
+        if (pin == 6)
+        {
           pinout = PIN_PB15E_TC5_WO1;
           pinmux = MUX_PB15E_TC5_WO1;
         }
@@ -373,49 +411,63 @@ boolean Adafruit_ZeroTimer::PWMout(boolean pwmout, uint8_t channum,
     }
 #endif // TC5
 #else  // SAMD21
-    if (_timernum == 3) {
-      if (channum == 0) {
-        if (pin == 10) {
+    if (_timernum == 3)
+    {
+      if (channum == 0)
+      {
+        if (pin == 10)
+        {
           pinout = PIN_PA18E_TC3_WO0;
           pinmux = MUX_PA18E_TC3_WO0;
         }
-        if (pin == 2) {
+        if (pin == 2)
+        {
           pinout = PIN_PA14E_TC3_WO0;
           pinmux = MUX_PA14E_TC3_WO0;
         }
       }
-      if (channum == 1) {
-        if (pin == 12) {
+      if (channum == 1)
+      {
+        if (pin == 12)
+        {
           pinout = PIN_PA19E_TC3_WO1;
           pinmux = MUX_PA19E_TC3_WO1;
         }
-        if (pin == 5) {
+        if (pin == 5)
+        {
           pinout = PIN_PA15E_TC3_WO1;
           pinmux = MUX_PA15E_TC3_WO1;
         }
       }
     }
 
-    if (_timernum == 4) {
-      if (channum == 0) {
-        if (pin == 20) { // a.k.a SDA
+    if (_timernum == 4)
+    {
+      if (channum == 0)
+      {
+        if (pin == 20)
+        { // a.k.a SDA
           pinout = PIN_PA22E_TC4_WO0;
           pinmux = MUX_PA22E_TC4_WO0;
         }
 #if defined(__SAMD21G18A__)
-        if (pin == A1) {
+        if (pin == A1)
+        {
           pinout = PIN_PB08E_TC4_WO0;
           pinmux = MUX_PB08E_TC4_WO0;
         }
 #endif
       }
-      if (channum == 1) {
-        if (pin == 21) { // a.k.a SCL
+      if (channum == 1)
+      {
+        if (pin == 21)
+        { // a.k.a SCL
           pinout = PIN_PA23E_TC4_WO1;
           pinmux = MUX_PA23E_TC4_WO1;
         }
 #if defined(__SAMD21G18A__)
-        if (pin == A2) {
+        if (pin == A2)
+        {
           pinout = PIN_PB09E_TC4_WO1;
           pinmux = MUX_PB09E_TC4_WO1;
         }
@@ -423,19 +475,24 @@ boolean Adafruit_ZeroTimer::PWMout(boolean pwmout, uint8_t channum,
       }
     }
 
-    if (_timernum == 5) {
-      if (channum == 0) {
+    if (_timernum == 5)
+    {
+      if (channum == 0)
+      {
 #if defined(__SAMD21G18A__)
-        if (pin == MOSI) {
+        if (pin == MOSI)
+        {
           pinout = PIN_PB10E_TC5_WO0;
           pinmux = MUX_PB10E_TC5_WO0;
         }
 #endif
         // only other option is D-, skip it!
       }
-      if (channum == 1) {
+      if (channum == 1)
+      {
 #if defined(__SAMD21G18A__)
-        if (pin == SCK) {
+        if (pin == SCK)
+        {
           pinout = PIN_PB11E_TC5_WO1;
           pinmux = MUX_PB11E_TC5_WO1;
         }
@@ -468,7 +525,8 @@ boolean Adafruit_ZeroTimer::PWMout(boolean pwmout, uint8_t channum,
     @param invert True to invert, False to use default
 */
 /**************************************************************************/
-void Adafruit_ZeroTimer::invertWave(uint8_t invert) {
+void Adafruit_ZeroTimer::invertWave(uint8_t invert)
+{
   _waveform_invert_output = invert;
 
   tc_init();
@@ -489,7 +547,8 @@ void Adafruit_ZeroTimer::invertWave(uint8_t invert) {
 void Adafruit_ZeroTimer::configure(tc_clock_prescaler prescale,
                                    tc_counter_size countersize,
                                    tc_wave_generation wavegen,
-                                   tc_count_direction countdir) {
+                                   tc_count_direction countdir)
+{
   Tc *const tc_modules[TC_INST_NUM] = TC_INSTS;
 
   if (_timernum > TC_INST_MAX_ID)
@@ -509,7 +568,8 @@ void Adafruit_ZeroTimer::configure(tc_clock_prescaler prescale,
   _counter_16_bit.compare_capture_channel[0] = 0x0000;
   _counter_16_bit.compare_capture_channel[1] = 0x0000;
 
-  if (countersize == TC_COUNTER_SIZE_8BIT) {
+  if (countersize == TC_COUNTER_SIZE_8BIT)
+  {
     _counter_8_bit.period = 0xFF;
   }
 
@@ -539,17 +599,23 @@ void Adafruit_ZeroTimer::configure(tc_clock_prescaler prescale,
 */
 /**************************************************************************/
 void Adafruit_ZeroTimer::setPeriodMatch(uint32_t period, uint32_t match,
-                                        uint8_t channum) {
-  if (_counter_size == TC_COUNTER_SIZE_8BIT) {
+                                        uint8_t channum)
+{
+  if (_counter_size == TC_COUNTER_SIZE_8BIT)
+  {
     while (tc_is_syncing(_hw))
       ;
     _counter_8_bit.period = period;
     _hw->COUNT8.PER.reg = (uint8_t)period;
     setCompare(channum, match);
-  } else if (_counter_size == TC_COUNTER_SIZE_16BIT) {
+  }
+  else if (_counter_size == TC_COUNTER_SIZE_16BIT)
+  {
     setCompare(0, period);
     setCompare(1, match);
-  } else if (_counter_size == TC_COUNTER_SIZE_32BIT) {
+  }
+  else if (_counter_size == TC_COUNTER_SIZE_32BIT)
+  {
     setCompare(0, period);
     setCompare(1, match);
   }
@@ -566,26 +632,33 @@ void Adafruit_ZeroTimer::setPeriodMatch(uint32_t period, uint32_t match,
 */
 /**************************************************************************/
 void Adafruit_ZeroTimer::setCallback(boolean enable, tc_callback cb_type,
-                                     void (*callback_func)(void)) {
+                                     void (*callback_func)(void))
+{
   if (callback_func == NULL)
     return;
 
   uint8_t instance = _timernum - TC_INSTANCE_OFFSET;
-  if (enable) {
+  if (enable)
+  {
     /* Set the bit corresponding to the callback_type */
-    if (cb_type == TC_CALLBACK_CC_CHANNEL0) {
+    if (cb_type == TC_CALLBACK_CC_CHANNEL0)
+    {
       _register_callback_mask |= (uint32_t)TC_INTFLAG_MC(1)
                                  << (instance * TC_CALLBACK_BITS);
       _enable_callback_mask |= (uint32_t)TC_INTFLAG_MC(1)
                                << (instance * TC_CALLBACK_BITS);
       __cb[4 + (instance * TC_CALLBACK_BITS)] = callback_func;
-    } else if (cb_type == TC_CALLBACK_CC_CHANNEL1) {
+    }
+    else if (cb_type == TC_CALLBACK_CC_CHANNEL1)
+    {
       _register_callback_mask |= (uint32_t)TC_INTFLAG_MC(2)
                                  << (instance * TC_CALLBACK_BITS);
       _enable_callback_mask |= (uint32_t)TC_INTFLAG_MC(2)
                                << (instance * TC_CALLBACK_BITS);
       __cb[5 + (instance * TC_CALLBACK_BITS)] = callback_func;
-    } else {
+    }
+    else
+    {
       _register_callback_mask |= (1UL << cb_type)
                                  << (instance * TC_CALLBACK_BITS);
       _enable_callback_mask |= (1UL << cb_type)
@@ -604,24 +677,36 @@ void Adafruit_ZeroTimer::setCallback(boolean enable, tc_callback cb_type,
     NVIC_EnableIRQ(_irqs[instance]);
 
     /* Enable callback */
-    if (cb_type == TC_CALLBACK_CC_CHANNEL0) {
+    if (cb_type == TC_CALLBACK_CC_CHANNEL0)
+    {
       _hw->COUNT8.INTENSET.reg = TC_INTFLAG_MC(1);
-    } else if (cb_type == TC_CALLBACK_CC_CHANNEL1) {
+    }
+    else if (cb_type == TC_CALLBACK_CC_CHANNEL1)
+    {
       _hw->COUNT8.INTENSET.reg = TC_INTFLAG_MC(2);
-    } else {
+    }
+    else
+    {
       _hw->COUNT8.INTENSET.reg = (1UL << cb_type);
     }
-  } else {
+  }
+  else
+  {
     /* Disable callback */
-    if (cb_type == TC_CALLBACK_CC_CHANNEL0) {
+    if (cb_type == TC_CALLBACK_CC_CHANNEL0)
+    {
       _hw->COUNT8.INTENCLR.reg = TC_INTFLAG_MC(1);
       _enable_callback_mask &=
           ~((uint32_t)(TC_INTFLAG_MC(1)) << (instance * TC_CALLBACK_BITS));
-    } else if (cb_type == TC_CALLBACK_CC_CHANNEL1) {
+    }
+    else if (cb_type == TC_CALLBACK_CC_CHANNEL1)
+    {
       _hw->COUNT8.INTENCLR.reg = TC_INTFLAG_MC(2);
       _enable_callback_mask &=
           ~((uint32_t)(TC_INTFLAG_MC(2)) << (instance * TC_CALLBACK_BITS));
-    } else {
+    }
+    else
+    {
       _hw->COUNT8.INTENCLR.reg = (1UL << cb_type);
       _enable_callback_mask &=
           ~((1UL << cb_type) << (instance * TC_CALLBACK_BITS));
@@ -637,17 +722,24 @@ void Adafruit_ZeroTimer::setCallback(boolean enable, tc_callback cb_type,
     will be cast to whatever size the timer is setup for (8/16/32 bit)
 */
 /**************************************************************************/
-void Adafruit_ZeroTimer::setCompare(uint8_t channum, uint32_t compare) {
+void Adafruit_ZeroTimer::setCompare(uint8_t channum, uint32_t compare, uint32_t initialValue)
+{
   if (channum > 1)
     return;
 
   // set the configuration
-  if (_counter_size == TC_COUNTER_SIZE_8BIT) {
+  if (_counter_size == TC_COUNTER_SIZE_8BIT)
+  {
     _counter_8_bit.compare_capture_channel[channum] = compare;
-  } else if (_counter_size == TC_COUNTER_SIZE_16BIT) {
+  }
+  else if (_counter_size == TC_COUNTER_SIZE_16BIT)
+  {
     _counter_16_bit.compare_capture_channel[channum] = compare;
-  } else if (_counter_size == TC_COUNTER_SIZE_32BIT) {
+  }
+  else if (_counter_size == TC_COUNTER_SIZE_32BIT)
+  {
     _counter_32_bit.compare_capture_channel[channum] = compare;
+    _counter_32_bit.value = initialValue;
   }
 
   // set it live
@@ -655,7 +747,8 @@ void Adafruit_ZeroTimer::setCompare(uint8_t channum, uint32_t compare) {
     ;
 
   /* Read out based on the TC counter size */
-  switch (_counter_size) {
+  switch (_counter_size)
+  {
   case TC_COUNTER_SIZE_8BIT:
     _hw->COUNT8.CC[channum].reg = (uint8_t)compare;
     break;
@@ -666,6 +759,12 @@ void Adafruit_ZeroTimer::setCompare(uint8_t channum, uint32_t compare) {
 
   case TC_COUNTER_SIZE_32BIT:
     _hw->COUNT32.CC[channum].reg = (uint32_t)compare;
+
+    while (tc_is_syncing(_hw))
+      ;
+
+    _hw->COUNT32.COUNT.reg = initialValue;
+
     break;
   }
 }
@@ -677,7 +776,8 @@ void Adafruit_ZeroTimer::setCompare(uint8_t channum, uint32_t compare) {
     @param  en True to enable, False to disable
 */
 /**************************************************************************/
-void Adafruit_ZeroTimer::enable(boolean en) {
+void Adafruit_ZeroTimer::enable(boolean en)
+{
   // First, check if its enabled
 #if defined(__SAMD51__)
   while (_hw->COUNT8.SYNCBUSY.bit.ENABLE)
@@ -688,7 +788,8 @@ void Adafruit_ZeroTimer::enable(boolean en) {
 #endif
   bool enabled = _hw->COUNT8.CTRLA.bit.ENABLE;
 
-  if (!enabled && en) {
+  if (!enabled && en)
+  {
     while (tc_is_syncing(_hw))
       ;
 
@@ -697,7 +798,8 @@ void Adafruit_ZeroTimer::enable(boolean en) {
     return;
   }
 
-  if (enabled && !en) {
+  if (enabled && !en)
+  {
     while (tc_is_syncing(_hw))
       ;
     /* Disable interrupt */
@@ -710,53 +812,59 @@ void Adafruit_ZeroTimer::enable(boolean en) {
   }
 }
 
-extern "C" {
+extern "C"
+{
 
-// TODO: this could probably be optimized to be faster
-static inline void __tc_cb_handler(uint32_t mask, uint32_t offset) {
-  mask &= _enable_callback_mask >> offset;
-  int i = 0;
-  uint32_t _active_cb = 1;
-  while (mask) {
-    if (mask & _active_cb) {
-      __cb[i + offset](); // call the callback
+  // TODO: this could probably be optimized to be faster
+  static inline void __tc_cb_handler(uint32_t mask, uint32_t offset)
+  {
+    mask &= _enable_callback_mask >> offset;
+    int i = 0;
+    uint32_t _active_cb = 1;
+    while (mask)
+    {
+      if (mask & _active_cb)
+      {
+        __cb[i + offset](); // call the callback
+      }
+      mask &= ~_active_cb;
+      i++;
+      _active_cb <<= 1;
     }
-    mask &= ~_active_cb;
-    i++;
-    _active_cb <<= 1;
   }
-}
 
-/**************************************************************************/
-/*!
-    @brief  The function we call from within the IRQ function defined in the
-   sketch. We can't have all the IRQ functions in this library because then no
-   other library can use them. So we have a handler that the usercode must call.
-    @param timerNum The timer we just got an IRQ for, 3 for TC3, 4 for TC4, etc!
-*/
-/**************************************************************************/
-void Adafruit_ZeroTimer::timerHandler(uint8_t timerNum) {
-  uint32_t mask;
-  switch (timerNum) {
-  case 3:
-    mask = TC3->COUNT8.INTFLAG.reg;
-    __tc_cb_handler(mask, 0);
-    TC3->COUNT8.INTFLAG.reg = 0b00111011; // clear
-    break;
+  /**************************************************************************/
+  /*!
+      @brief  The function we call from within the IRQ function defined in the
+     sketch. We can't have all the IRQ functions in this library because then no
+     other library can use them. So we have a handler that the usercode must call.
+      @param timerNum The timer we just got an IRQ for, 3 for TC3, 4 for TC4, etc!
+  */
+  /**************************************************************************/
+  void Adafruit_ZeroTimer::timerHandler(uint8_t timerNum)
+  {
+    uint32_t mask;
+    switch (timerNum)
+    {
+    case 3:
+      mask = TC3->COUNT8.INTFLAG.reg;
+      __tc_cb_handler(mask, 0);
+      TC3->COUNT8.INTFLAG.reg = 0b00111011; // clear
+      break;
 #if defined(TC4_GCLK_ID)
-  case 4:
-    mask = TC4->COUNT8.INTFLAG.reg;
-    __tc_cb_handler(mask, TC_CALLBACK_BITS);
-    TC4->COUNT8.INTFLAG.reg = 0b00111011; // clear
-    break;
+    case 4:
+      mask = TC4->COUNT8.INTFLAG.reg;
+      __tc_cb_handler(mask, TC_CALLBACK_BITS);
+      TC4->COUNT8.INTFLAG.reg = 0b00111011; // clear
+      break;
 #endif
 #if defined(TC5_GCLK_ID)
-  case 5:
-    mask = TC5->COUNT8.INTFLAG.reg;
-    __tc_cb_handler(mask, TC_CALLBACK_BITS * 2);
-    TC5->COUNT8.INTFLAG.reg = 0b00111011; // clear
-    break;
+    case 5:
+      mask = TC5->COUNT8.INTFLAG.reg;
+      __tc_cb_handler(mask, TC_CALLBACK_BITS * 2);
+      TC5->COUNT8.INTFLAG.reg = 0b00111011; // clear
+      break;
 #endif
+    }
   }
-}
 };
