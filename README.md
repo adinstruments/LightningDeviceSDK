@@ -24,8 +24,7 @@ See [Changelog](CHANGELOG.md).
 
 ## Upcoming Features
 
--  Better than 10 microsecond inter-device synchronization over USB for Microchip ARM SAMD51 and SAMD21 based devices (e.g. Adafruit Feather M4, M0 etc. and Sparkfun Thing+ SAMD51)
--  Calling arbitrary proxy functions from custom UI
+-  Base classes to help with getting started
 -  Plugins work for non-admin users
 -  Better error messaging
 
