@@ -1,6 +1,6 @@
 const path = require('path');
 const os = require('os');
-const cpx = require('cpx');
+const cpx = require('cpx2');
 
 function userDevicePluginsPath() {
    const result = path.join(
