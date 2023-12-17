@@ -1,5 +1,21 @@
 # LightningDeviceSDK Change Log
 
+### v0.1.12 - 24/05/2023
+- Improved documentation for time synchroization (TIME-SYNCH.md)
+- Added time sync compatibility with ADInstruments PowerLab C devices.
+
+### v0.1.11 - 12/09/2022
+ - Added an interface and example for floating point support, NIBPnanoFloatingPoint.
+ - Update firmware example for Ardunio and SAMD51.
+ - Fixed up various TypeScript and liniting errors
+
+### v0.1.10 - 09/08/2021
+ - Added DEBUGGING.md for tips on debugging.
+
+### v0.1.9 - 03/02/2021
+ - Added a base class for DeviceClass to help with matching devices.
+ - Added another Ardunio example script.
+
 ### v0.1.8 - 24/12/2020
 - Added an Arduino-compatible Teensy device example. This device contains two timer examples and unlike other examples contains an ARM Cortex-M7 running at 600 MHz.
 - Add a simple PhysicalDevice base class for Arduino devices.
